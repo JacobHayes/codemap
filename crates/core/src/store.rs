@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS symbols (
 CREATE TABLE IF NOT EXISTS refs (
     path VARCHAR, line UINTEGER, name VARCHAR, kind VARCHAR, symbol VARCHAR);
 CREATE TABLE IF NOT EXISTS \"similar\" (a VARCHAR, b VARCHAR, kind VARCHAR, score DOUBLE);
+CREATE TABLE IF NOT EXISTS duplicated (path VARCHAR, line UINTEGER);
 CREATE TABLE IF NOT EXISTS findings (
     detector VARCHAR, subject VARCHAR, subject_kind VARCHAR, area VARCHAR, reason VARCHAR,
     mass_lines DOUBLE, confidence DOUBLE, measures VARCHAR, labels VARCHAR, facts VARCHAR, evidence VARCHAR,
@@ -39,14 +40,15 @@ CREATE TABLE IF NOT EXISTS areas (
     acknowledged VARCHAR);
 CREATE OR REPLACE VIEW line_facts AS
     SELECT l.path, l.line, l.tokens, l.nodes, l.role, l.concern, l.symbol, f.language,
-           s.kind AS symbol_kind
-    FROM lines l JOIN files f ON f.path = l.path LEFT JOIN symbols s ON s.id = l.symbol;
+           s.kind AS symbol_kind, CAST(d.line IS NOT NULL AS UINTEGER) AS duplicated
+    FROM lines l JOIN files f ON f.path = l.path LEFT JOIN symbols s ON s.id = l.symbol
+         LEFT JOIN duplicated d ON d.path = l.path AND d.line = l.line;
 ";
 
 /// Tables holding per-file rows, keyed by `path`.
 const FILE_TABLES: [&str; 4] = ["lines", "symbols", "refs", "files"];
 /// Tables the analyses and detectors rewrite from the whole index.
-const DERIVED_TABLES: [&str; 3] = ["similar", "findings", "areas"];
+const DERIVED_TABLES: [&str; 4] = ["similar", "duplicated", "findings", "areas"];
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {

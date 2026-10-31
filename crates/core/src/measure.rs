@@ -78,6 +78,8 @@ pub enum Base {
     Lines,
     Tokens,
     Nodes,
+    /// Lines of the copies beyond the largest in each group of duplicates.
+    DuplicatedLines,
 }
 
 impl Base {
@@ -88,6 +90,7 @@ impl Base {
             Self::Lines => "lines",
             Self::Tokens => "tokens",
             Self::Nodes => "syntax nodes",
+            Self::DuplicatedLines => "duplicated lines",
         }
     }
 
@@ -96,6 +99,7 @@ impl Base {
             Self::Lines => "1",
             Self::Tokens => "tokens",
             Self::Nodes => "nodes",
+            Self::DuplicatedLines => "duplicated",
         }
     }
 }
@@ -235,6 +239,11 @@ pub fn catalog() -> Vec<MeasureDef> {
             sum(Base::Tokens, "", ""),
         ),
         def("nodes", "Syntax nodes", sum(Base::Nodes, "", "")),
+        def(
+            "duplicated_lines",
+            "Lines of copies beyond the largest in each group of duplicates",
+            sum(Base::DuplicatedLines, "", ""),
+        ),
         def(
             "handler_lines",
             "Lines of error handling",

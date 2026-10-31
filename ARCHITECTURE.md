@@ -118,7 +118,10 @@ erDiagram
   range, parent and content hash.
 - **`refs`** are names as written; **`edges`** are references resolved to symbols, with a
   confidence, because resolution is by name and can be ambiguous.
-- **`similar`** pairs symbols with a kind (exact, near, semantic) and a score.
+- **`similar`** pairs symbols with a kind (exact, near, semantic) and a score: enough pairs to
+  connect each cluster of copies, not every pair inside it. **`duplicated`** marks the lines of
+  every copy but the longest in each cluster, which is what the `duplicated_lines` base measure
+  sums.
 - **`labels`** and **`measures`** (subject, key, value) are open tables: an analysis adds a
   dimension or measure by writing rows, not columns.
 - **`findings`** and **`areas`**: see Detectors.

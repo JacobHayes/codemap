@@ -3,7 +3,7 @@
 /**
  * What is counted per line.
  */
-export type Base = "lines" | "tokens" | "nodes";
+export type Base = "lines" | "tokens" | "nodes" | "duplicated_lines";
 
 /**
  * Narrows lines on any dimension. Every field that is set must match.

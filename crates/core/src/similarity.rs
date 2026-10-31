@@ -183,6 +183,32 @@ pub(crate) fn run(index: &Index) -> Result<(), QueryError> {
         rows.append_row(params![entries[a].id, entries[b].id, kind, score])?;
     }
     rows.flush()?;
+    drop(rows);
+    write_duplicated(index)
+}
+
+/// Rewrites `duplicated`: the lines of every copy but the longest in each group, so that
+/// summing it counts the lines a group could do without once.
+fn write_duplicated(index: &Index) -> Result<(), QueryError> {
+    let connection = index.store().connection();
+    connection.execute_batch("DELETE FROM duplicated")?;
+    let mut rows = connection.appender("duplicated")?;
+    let mut written = BTreeSet::new();
+    for group in groups(index)? {
+        let largest = group.largest();
+        for (position, member) in group.members.iter().enumerate() {
+            if position == largest {
+                continue;
+            }
+            for line in member.start_line..=member.end_line {
+                // Nested functions can both be members.
+                if written.insert((member.path.clone(), line)) {
+                    rows.append_row(params![member.path, line])?;
+                }
+            }
+        }
+    }
+    rows.flush()?;
     Ok(())
 }
 

@@ -1,7 +1,7 @@
 //! The duplication detector fires on copies, in production code and in tests, and stays quiet on
 //! code that only has the same shape.
 
-use codemap_core::{Answer, Finding, Query, SubjectKind};
+use codemap_core::{Answer, Filter, Finding, Hierarchy, MeasureRef, Query, SubjectKind};
 
 use crate::common::{areas, ask, baseline, indexed, write};
 use crate::similarity::total;
@@ -150,4 +150,33 @@ fn similar_shapes_with_different_logic_and_tiny_functions_are_quiet() {
     );
     let index = indexed(dir.path());
     assert!(all_duplication(&index).is_empty());
+}
+
+#[test]
+fn duplicated_lines_count_every_copy_but_the_longest_and_can_colour_the_map() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 20);
+    for name in ["a", "b", "c"] {
+        write(
+            dir.path(),
+            &format!("src/{name}.rs"),
+            &total(name, "items", "sum", "1.5"),
+        );
+    }
+    let index = indexed(dir.path());
+    let measure = |name: &str| {
+        let query = Query::Tree {
+            hierarchy: Hierarchy::Path,
+            size: Some(MeasureRef::Named(name.to_owned())),
+            color: None,
+            filter: Filter::default(),
+            depth: None,
+        };
+        match ask(&index, &query) {
+            Answer::Tree(tree) => tree.total,
+            other => panic!("not a tree: {other:?}"),
+        }
+    };
+    assert_eq!(measure("duplicated_lines"), 2.0 * 9.0);
+    assert!(measure("lines") > measure("duplicated_lines"));
 }

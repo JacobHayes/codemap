@@ -54,7 +54,8 @@ your session.
    detectors, measures and dimensions.
 2. `codemap area <subject> --json`: the findings, evidence (line ranges) and related areas
    for one file or directory exactly as `areas` printed it.
-3. Read the evidence with your own tools. Ask: is this mass needed? Is the same idea built
+3. Read the evidence with your own tools; a duplication finding lists every copy, so open each
+   and compare. Ask: is this mass needed? Is the same idea built
    twice? Are there layers that only pass through? Is the handling or testing out of
    proportion to what it protects?
 4. Decide. Either propose a concrete simplification, or, if the complexity is essential, tell
