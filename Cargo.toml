@@ -30,6 +30,24 @@ tokio = { version = "1.54.1", default-features = false, features = ["macros", "n
 rust-embed = { version = "8.13.0", default-features = false, features = ["debug-embed", "mime-guess"] }
 # Drives the router in tests without a socket.
 tower = { version = "0.5.3", default-features = false, features = ["util"] }
+# Parses source into syntax trees; one parser for every language.
+tree-sitter = { version = "0.27.1", default-features = false, features = ["std"] }
+# The Rust grammar and its tags query.
+tree-sitter-rust = "0.24.2"
+# The Python grammar and its tags query.
+tree-sitter-python = "0.25.0"
+# The index store: embedded columnar SQL, so every view is a GROUP BY. Bundled so the binary is self-contained.
+duckdb = { version = "~1.20000.1", default-features = false, features = ["bundled"] }
+# Content hashes for hash-and-diff and the build id: fast on large trees.
+blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
+# Walks the tree honouring .gitignore and similar files.
+ignore = { version = "0.4.34", default-features = false }
+# Extracts files in parallel; extraction is a pure function of path and bytes.
+rayon = { version = "1.12.0", default-features = false }
+# Token counts per line with the o200k encoding.
+bpe-openai = { version = "0.3.2", default-features = false }
+# Throwaway trees for the indexing tests.
+tempfile = { version = "3.27.0", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
