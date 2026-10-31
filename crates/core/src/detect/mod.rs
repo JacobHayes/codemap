@@ -71,6 +71,8 @@ pub struct Finding {
     pub measures: BTreeMap<String, f64>,
     /// Detector-specific words by name.
     pub labels: BTreeMap<String, String>,
+    /// The numbers behind the reason as short sentences, ready to show.
+    pub facts: Vec<String>,
     pub evidence: Vec<Evidence>,
     /// The reason an acknowledgement gives, when one covers this finding.
     pub acknowledged: Option<String>,
@@ -96,6 +98,7 @@ impl Finding {
             confidence: confidence.clamp(0.0, 1.0),
             measures: BTreeMap::new(),
             labels: BTreeMap::new(),
+            facts: Vec::new(),
             evidence: Vec::new(),
             acknowledged: None,
         }
@@ -103,6 +106,11 @@ impl Finding {
 
     pub(crate) fn measure(mut self, name: &str, value: f64) -> Self {
         self.measures.insert(name.to_owned(), value);
+        self
+    }
+
+    pub(crate) fn fact(mut self, sentence: String) -> Self {
+        self.facts.push(sentence);
         self
     }
 

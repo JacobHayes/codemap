@@ -129,6 +129,20 @@ fn size_fires_on_an_outlier_file_function_and_concentrated_directory() {
 }
 
 #[test]
+fn every_finding_carries_facts_to_show() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 30);
+    write(dir.path(), "big/huge.rs", &plain_functions("huge", 400));
+    write(dir.path(), "handlers/h.rs", &handler_functions("h", 40));
+    let index = indexed(dir.path());
+    for detector in ["size", "composition"] {
+        let found = findings_of(&index, detector);
+        assert!(!found.is_empty(), "{detector} found nothing");
+        assert!(found.iter().all(|f| !f.facts.is_empty()), "{detector}");
+    }
+}
+
+#[test]
 fn size_stays_quiet_when_files_are_alike() {
     let dir = tempfile::tempdir().unwrap();
     baseline(dir.path(), 40);

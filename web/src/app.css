@@ -324,6 +324,7 @@
 }
 .findings,
 .related,
+.facts,
 .evidence {
   list-style: none;
   margin: var(--space-2) 0 0;
@@ -332,6 +333,13 @@
 .finding {
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--color-border);
+}
+.facts {
+  margin-top: var(--space-1);
+  color: var(--color-secondary);
+}
+.facts + .evidence {
+  margin-top: var(--space-2);
 }
 .evidence,
 .related {

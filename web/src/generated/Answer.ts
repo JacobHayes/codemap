@@ -109,7 +109,11 @@ measures: { [key in string]: number },
 /**
  * Detector-specific words by name.
  */
-labels: { [key in string]: string }, evidence: Array<Evidence>, 
+labels: { [key in string]: string }, 
+/**
+ * The numbers behind the reason as short sentences, ready to show.
+ */
+facts: Array<string>, evidence: Array<Evidence>, 
 /**
  * The reason an acknowledgement gives, when one covers this finding.
  */

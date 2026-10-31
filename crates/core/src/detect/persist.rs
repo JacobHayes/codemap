@@ -36,6 +36,7 @@ impl Index {
                 finding.confidence,
                 serde_json::to_string(&finding.measures)?,
                 serde_json::to_string(&finding.labels)?,
+                serde_json::to_string(&finding.facts)?,
                 serde_json::to_string(&finding.evidence)?,
                 finding.acknowledged
             ])?;
@@ -88,7 +89,7 @@ impl Index {
     pub(crate) fn findings_of(&self, area: &str) -> Result<Vec<Finding>, QueryError> {
         let mut statement = self.store().connection().prepare(
             "SELECT detector, subject, subject_kind, area, reason, mass_lines, confidence,
-                    measures, labels, evidence, acknowledged
+                    measures, labels, facts, evidence, acknowledged
              FROM findings WHERE area = ? ORDER BY mass_lines DESC, detector, subject",
         )?;
         let rows = statement.query_map([area], |row| {
@@ -103,19 +104,22 @@ impl Index {
                     confidence: row.get(6)?,
                     measures: BTreeMap::new(),
                     labels: BTreeMap::new(),
+                    facts: Vec::new(),
                     evidence: Vec::new(),
-                    acknowledged: row.get(10)?,
+                    acknowledged: row.get(11)?,
                 },
                 row.get::<_, String>(7)?,
                 row.get::<_, String>(8)?,
                 row.get::<_, String>(9)?,
+                row.get::<_, String>(10)?,
             ))
         })?;
         let mut findings = Vec::new();
         for row in rows {
-            let (mut finding, measures, labels, evidence) = row?;
+            let (mut finding, measures, labels, facts, evidence) = row?;
             finding.measures = serde_json::from_str(&measures)?;
             finding.labels = serde_json::from_str(&labels)?;
+            finding.facts = serde_json::from_str(&facts)?;
             finding.evidence = serde_json::from_str(&evidence)?;
             findings.push(finding);
         }

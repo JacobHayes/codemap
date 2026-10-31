@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS refs (
     path VARCHAR, line UINTEGER, name VARCHAR, kind VARCHAR, symbol VARCHAR);
 CREATE TABLE IF NOT EXISTS findings (
     detector VARCHAR, subject VARCHAR, subject_kind VARCHAR, area VARCHAR, reason VARCHAR,
-    mass_lines DOUBLE, confidence DOUBLE, measures VARCHAR, labels VARCHAR, evidence VARCHAR,
+    mass_lines DOUBLE, confidence DOUBLE, measures VARCHAR, labels VARCHAR, facts VARCHAR, evidence VARCHAR,
     acknowledged VARCHAR);
 CREATE TABLE IF NOT EXISTS areas (
     subject VARCHAR, subject_kind VARCHAR, rank UINTEGER, opportunity DOUBLE, mass_lines DOUBLE,
@@ -128,13 +128,16 @@ impl Store {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
-    /// Drops every per-file row.
+    /// Drops every per-file row, and recreates the derived tables so that a new build's columns
+    /// apply to an index an older build wrote.
     pub fn clear(&self) -> Result<(), StoreError> {
         for table in FILE_TABLES {
             self.connection
                 .execute(&format!("DELETE FROM {table}"), [])?;
         }
-        Ok(())
+        self.connection
+            .execute_batch("DROP TABLE IF EXISTS findings; DROP TABLE IF EXISTS areas;")?;
+        Ok(self.connection.execute_batch(SCHEMA)?)
     }
 
     /// Drops the rows of these files.

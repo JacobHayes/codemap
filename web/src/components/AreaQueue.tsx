@@ -1,5 +1,5 @@
 import type { Area, AreaDetail, AreaList, Finding } from '../generated/Answer';
-import { amount, plain, words } from '../format';
+import { amount, words } from '../format';
 import { useAnswer } from '../useAnswer';
 import { hasFilters, type Navigate, type UrlState } from '../urlState';
 import { Link } from './Link';
@@ -15,9 +15,12 @@ function mapPatch(area: Area): Partial<UrlState> {
     : { view: 'map', path: parentOf(area.subject), selected: area.subject, area: null };
 }
 
-function FindingView({ finding, area }: { finding: Finding; area: Area }) {
-  const measures = Object.entries(finding.measures);
-  const labels = Object.entries(finding.labels);
+function FindingView({
+  finding,
+  area,
+  state,
+  navigate,
+}: { finding: Finding; area: Area } & Common) {
   return (
     <li className="finding">
       <div>
@@ -27,29 +30,25 @@ function FindingView({ finding, area }: { finding: Finding; area: Area }) {
       {finding.acknowledged !== null && (
         <div className="muted">Acknowledged: {finding.acknowledged}</div>
       )}
-      {(measures.length > 0 || labels.length > 0) && (
-        <table className="kv">
-          <tbody>
-            {measures.map(([name, value]) => (
-              <tr key={name}>
-                <th>{words(name)}</th>
-                <td className="mono">{plain(value)}</td>
-              </tr>
-            ))}
-            {labels.map(([name, value]) => (
-              <tr key={name}>
-                <th>{words(name)}</th>
-                <td>{words(value)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {finding.facts.length > 0 && (
+        <ul className="facts">
+          {finding.facts.map((fact) => (
+            <li key={fact}>{fact}</li>
+          ))}
+        </ul>
       )}
       {finding.evidence.length > 0 && (
         <ul className="evidence mono">
           {finding.evidence.map((e) => (
             <li key={`${e.path}:${String(e.startLine)}`}>
-              {`${e.path}, lines ${String(e.startLine)} to ${String(e.endLine)}`}
+              <Link
+                state={state}
+                patch={{ view: 'map', path: parentOf(e.path), selected: e.path, area: null }}
+                navigate={navigate}
+              >
+                {e.path}
+              </Link>
+              {`, lines ${String(e.startLine)} to ${String(e.endLine)}`}
             </li>
           ))}
         </ul>
@@ -74,6 +73,8 @@ function Detail({ subject, state, navigate }: { subject: string } & Common) {
             key={`${finding.detector}:${finding.subject}`}
             finding={finding}
             area={detail.area}
+            state={state}
+            navigate={navigate}
           />
         ))}
       </ul>
@@ -124,7 +125,7 @@ function AreaCard({ area, state, navigate }: { area: Area } & Common) {
             if (now !== open) navigate({ area: now ? area.subject : null }, 'replace');
           }}
         >
-          <summary>Evidence and measures</summary>
+          <summary>Facts and evidence</summary>
           {open && <Detail subject={area.subject} state={state} navigate={navigate} />}
         </details>
       </div>

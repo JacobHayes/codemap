@@ -74,9 +74,39 @@ impl Category {
         (lines, agg.role(self.population))
     }
 
+    /// What the category's share is of, in a sentence.
+    fn share_fact(&self, lines: f64, of: f64, share: f64) -> String {
+        let population = population_word(self.population);
+        if self.concern.is_some() {
+            format!(
+                "{} of {} {population} lines are {} ({})",
+                count(lines),
+                count(of),
+                self.words,
+                percent(share),
+            )
+        } else {
+            format!(
+                "{} lines of {} against {} {population} lines ({})",
+                count(lines),
+                self.words,
+                count(of),
+                percent(share),
+            )
+        }
+    }
+
     fn column_value(&self) -> (&'static str, &'static str) {
         self.concern
             .map_or(("role", self.role.as_str()), |c| ("concern", c.as_str()))
+    }
+}
+
+/// A role as an adjective for lines.
+fn population_word(role: Role) -> &'static str {
+    match role {
+        Role::Prod => "production",
+        other => other.as_str(),
     }
 }
 
@@ -188,7 +218,7 @@ fn finding(
         category.words,
         percent(hit.share),
         count(hit.of),
-        category.population.as_str(),
+        population_word(category.population),
         percent(baseline),
     );
     let (column, value) = category.column_value();
@@ -229,7 +259,13 @@ fn finding(
     .measure("lines", hit.of)
     .measure("share", hit.share)
     .measure("codebaseShare", baseline)
-    .measure("excessLines", hit.excess);
+    .measure("excessLines", hit.excess)
+    .fact(category.share_fact(lines, hit.of, hit.share))
+    .fact(format!("{} across the codebase", percent(baseline)))
+    .fact(format!(
+        "{} lines more than the codebase's share",
+        count(hit.excess)
+    ));
     found
         .labels
         .insert("category".to_owned(), category.words.to_owned());

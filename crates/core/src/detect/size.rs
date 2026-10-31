@@ -168,6 +168,15 @@ fn files(context: &Context) -> Vec<Finding> {
             .measure("tokens", agg.tokens)
             .measure("typicalLines", median_lines)
             .measure("robustZ", z)
+            .fact(format!(
+                "{} lines and {} tokens",
+                count(agg.lines),
+                count(agg.tokens)
+            ))
+            .fact(format!(
+                "the typical file is about {} lines",
+                count(median_lines)
+            ))
             .evidence(path, &[(1, whole_lines(agg.lines))]),
         );
     }
@@ -219,6 +228,15 @@ fn functions(context: &Context) -> Vec<Finding> {
             .measure("tokens", stat.tokens)
             .measure("typicalLines", median_lines)
             .measure("robustZ", z)
+            .fact(format!(
+                "{} lines and {} tokens",
+                count(stat.lines),
+                count(stat.tokens)
+            ))
+            .fact(format!(
+                "the typical function is about {} lines",
+                count(median_lines)
+            ))
             .evidence(&symbol.path, &[(symbol.start_line, symbol.end_line)]),
         );
     }
@@ -270,36 +288,60 @@ fn concentrations(context: &Context) -> Vec<Finding> {
         if explained {
             continue;
         }
-        let reason = format!(
-            "{} holds {:.0}% of the lines in {:.0}% of the files: {} lines, about {} more than its share.",
-            path,
-            line_share * 100.0,
-            file_share * 100.0,
-            count(mass.lines),
-            count(excess),
-        );
-        let prefix = format!("{path}/");
-        let mut biggest: Vec<_> = code_files(context)
-            .filter(|(file, _)| file.starts_with(&prefix))
-            .collect();
-        biggest.sort_by(|a, b| b.1.lines.total_cmp(&a.1.lines).then(a.0.cmp(b.0)));
-        let mut found = Finding::new(
-            "size",
-            SubjectKind::Directory,
-            path,
-            reason,
-            excess,
-            1.0 - file_share / line_share,
-        )
-        .measure("lines", mass.lines)
-        .measure("files", mass.files)
-        .measure("lineShare", line_share)
-        .measure("fileShare", file_share)
-        .measure("excessLines", excess);
-        for (file, file_agg) in biggest.into_iter().take(3) {
-            found = found.evidence(file, &[(1, whole_lines(file_agg.lines))]);
-        }
-        findings.push(found);
+        findings.push(concentration(
+            context, path, mass, line_share, file_share, excess,
+        ));
     }
     findings
+}
+
+fn concentration(
+    context: &Context,
+    path: &str,
+    mass: &Mass,
+    line_share: f64,
+    file_share: f64,
+    excess: f64,
+) -> Finding {
+    let reason = format!(
+        "{} holds {:.0}% of the lines in {:.0}% of the files: {} lines, about {} more than its share.",
+        path,
+        line_share * 100.0,
+        file_share * 100.0,
+        count(mass.lines),
+        count(excess),
+    );
+    let prefix = format!("{path}/");
+    let mut biggest: Vec<_> = code_files(context)
+        .filter(|(file, _)| file.starts_with(&prefix))
+        .collect();
+    biggest.sort_by(|a, b| b.1.lines.total_cmp(&a.1.lines).then(a.0.cmp(b.0)));
+    let mut found = Finding::new(
+        "size",
+        SubjectKind::Directory,
+        path,
+        reason,
+        excess,
+        1.0 - file_share / line_share,
+    )
+    .measure("lines", mass.lines)
+    .measure("files", mass.files)
+    .measure("lineShare", line_share)
+    .measure("fileShare", file_share)
+    .measure("excessLines", excess)
+    .fact(format!(
+        "{} lines in {} files",
+        count(mass.lines),
+        count(mass.files)
+    ))
+    .fact(format!(
+        "{:.0}% of the lines in {:.0}% of the files",
+        line_share * 100.0,
+        file_share * 100.0
+    ))
+    .fact(format!("{} lines more than its share", count(excess)));
+    for (file, file_agg) in biggest.into_iter().take(3) {
+        found = found.evidence(file, &[(1, whole_lines(file_agg.lines))]);
+    }
+    found
 }

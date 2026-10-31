@@ -80,7 +80,7 @@ test('choosing an area in the queue shows it on the map', async ({ page }) => {
 
 test('an area unfolds its evidence and the address remembers it', async ({ page }) => {
   await page.goto('/?view=areas');
-  await page.getByText('Evidence and measures').first().click();
+  await page.getByText('Facts and evidence').first().click();
   await expect(page).toHaveURL(/area=/);
   await expect(page.locator('.findings')).toBeVisible();
 });

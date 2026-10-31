@@ -74,6 +74,14 @@ fn check(context: &Context, rule: &Rule, measure: &Measure) -> Result<Vec<Findin
         let mut found = Finding::new("rules", unit.kind, &unit.subject, reason, unit.lines, 1.0)
             .measure("value", value)
             .measure("limit", limit);
+        found = found.fact(format!("rule \"{}\"", rule.name)).fact(format!(
+            "{} against {direction} {limit} per {per}",
+            if measure.is_ratio() {
+                format!("{value:.2}")
+            } else {
+                count(value)
+            },
+        ));
         found.labels.insert("rule".to_owned(), rule.name.clone());
         found
             .labels
