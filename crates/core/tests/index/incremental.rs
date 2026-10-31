@@ -107,9 +107,10 @@ fn an_incremental_index_equals_a_fresh_one() {
 
     let donors = files_under(mixed.path());
     let mut random = Lcg(7);
-    for round in 0..12 {
+    // Each index costs ~0.3 s in a debug build, so few rounds carry many mutations.
+    for round in 0..5 {
         let present = files_under(live.path());
-        for _ in 0..=random.next(3) {
+        for _ in 0..=random.next(5) {
             let donor = &donors[random.next(donors.len())];
             let bytes = fs::read(mixed.path().join(donor)).unwrap();
             match random.next(3) {

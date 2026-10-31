@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 
 use duckdb::params;
@@ -309,12 +310,19 @@ impl Index {
 }
 
 /// Hashes the running executable: any rebuild of codemap changes what extraction may produce.
+/// The executable cannot change under a running process, so the hash is computed once.
 fn build_id() -> Result<String, IndexError> {
+    static BUILD_ID: OnceLock<String> = OnceLock::new();
+    if let Some(id) = BUILD_ID.get() {
+        return Ok(id.clone());
+    }
     let executable = std::env::current_exe().map_err(IndexError::BuildId)?;
     let file = fs::File::open(executable).map_err(IndexError::BuildId)?;
     let mut hasher = blake3::Hasher::new();
     hasher.update_reader(file).map_err(IndexError::BuildId)?;
-    Ok(hasher.finalize().to_hex().to_string())
+    Ok(BUILD_ID
+        .get_or_init(|| hasher.finalize().to_hex().to_string())
+        .clone())
 }
 
 /// Every file under `root` that ignore files let through, as sorted `/`-separated relative paths.
