@@ -22,6 +22,15 @@ description = "Build the web app into web/dist, which the binary embeds"
 dir = "web"
 run = "npm ci && npm run build"
 
+[tasks.screenshots]
+description = "Walk every view state at 1440 and 1024px in both themes into dist/screenshots/"
+depends = ["build:web"]
+run = '''
+cargo build
+rm -rf dist/screenshots
+cd web && CODEMAP_SHOTS="$(cd .. && pwd)/dist/screenshots" npx playwright test e2e/walk.spec.ts
+'''
+
 [tasks.dev]
 description = "Run the Vite dev server (proxies /api to `codemap serve`)"
 dir = "web"
