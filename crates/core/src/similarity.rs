@@ -12,7 +12,7 @@
 //! The population is functions and tests outside generated and vendored code: nobody can cut
 //! those by editing them.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use codemap_lang::Role;
 use duckdb::params;
@@ -184,4 +184,130 @@ pub(crate) fn run(index: &Index) -> Result<(), QueryError> {
     }
     rows.flush()?;
     Ok(())
+}
+
+/// A function or test in a group of copies.
+#[derive(Debug, Clone)]
+pub(crate) struct Member {
+    pub path: String,
+    pub name: String,
+    pub start_line: u32,
+    pub end_line: u32,
+    pub is_test: bool,
+}
+
+impl Member {
+    pub fn lines(&self) -> u32 {
+        self.end_line - self.start_line + 1
+    }
+}
+
+/// Functions connected by similar pairs: copies of one idea.
+#[derive(Debug, Clone)]
+pub(crate) struct Group {
+    /// In file and line order.
+    pub members: Vec<Member>,
+    /// Every pair that holds the group together is exact.
+    pub exact: bool,
+    /// The weakest pair's score.
+    pub score_min: f64,
+}
+
+impl Group {
+    pub fn lines_total(&self) -> u32 {
+        self.members.iter().map(Member::lines).sum()
+    }
+
+    /// Position of the longest member, the first of equals.
+    pub fn largest(&self) -> usize {
+        let lines: Vec<u32> = self.members.iter().map(Member::lines).collect();
+        lines
+            .iter()
+            .enumerate()
+            .max_by_key(|&(position, &lines)| (lines, std::cmp::Reverse(position)))
+            .map_or(0, |(position, _)| position)
+    }
+
+    /// Lines beyond the longest member.
+    pub fn lines_duplicated(&self) -> u32 {
+        self.lines_total() - self.members[self.largest()].lines()
+    }
+
+    pub fn file_count(&self) -> usize {
+        self.members
+            .iter()
+            .map(|member| member.path.as_str())
+            .collect::<BTreeSet<_>>()
+            .len()
+    }
+
+    pub fn is_test(&self) -> bool {
+        self.members.iter().all(|member| member.is_test)
+    }
+}
+
+/// The connected components of `similar`, in file order of their first members.
+pub(crate) fn groups(index: &Index) -> Result<Vec<Group>, QueryError> {
+    let connection = index.store().connection();
+    let mut statement = connection.prepare(
+        "SELECT s.id, s.path, s.name, s.kind = 'test' OR l.role = 'test', s.start_line, s.end_line
+         FROM symbols s JOIN lines l ON l.path = s.path AND l.line = s.start_line
+         WHERE s.id IN (SELECT a FROM \"similar\" UNION SELECT b FROM \"similar\")
+         ORDER BY s.path, s.start_line, s.end_line DESC",
+    )?;
+    let mut places = BTreeMap::new();
+    let mut members = Vec::new();
+    let found = statement.query_map([], |row| {
+        let member = Member {
+            path: row.get(1)?,
+            name: row.get(2)?,
+            is_test: row.get(3)?,
+            start_line: row.get(4)?,
+            end_line: row.get(5)?,
+        };
+        Ok((row.get::<_, String>(0)?, member))
+    })?;
+    for row in found {
+        let (id, member) = row?;
+        places.insert(id, members.len());
+        members.push(member);
+    }
+    let mut components = Components::new(members.len());
+    let mut statement = connection.prepare("SELECT a, b, kind, score FROM \"similar\"")?;
+    let pairs = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, f64>(3)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let place = |id: &str| places[id];
+    for (a, b, _, _) in &pairs {
+        components.join(place(a), place(b));
+    }
+    let mut by_root: BTreeMap<usize, Group> = BTreeMap::new();
+    for (position, member) in members.into_iter().enumerate() {
+        let group = by_root.entry(components.find(position)).or_insert(Group {
+            members: Vec::new(),
+            exact: true,
+            score_min: 1.0,
+        });
+        group.members.push(member);
+    }
+    for (a, _, kind, score) in &pairs {
+        let group = by_root
+            .get_mut(&components.find(place(a)))
+            .expect("every paired function is in a group");
+        group.exact &= kind == EXACT;
+        group.score_min = group.score_min.min(*score);
+    }
+    let mut groups: Vec<Group> = by_root.into_values().collect();
+    groups.sort_by(|a, b| {
+        (&a.members[0].path, a.members[0].start_line)
+            .cmp(&(&b.members[0].path, b.members[0].start_line))
+    });
+    Ok(groups)
 }

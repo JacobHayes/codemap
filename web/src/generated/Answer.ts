@@ -160,7 +160,7 @@ export type Spacing = "linear" | "log";
 /**
  * What a finding is about.
  */
-export type SubjectKind = "directory" | "file" | "function";
+export type SubjectKind = "directory" | "file" | "function" | "group";
 
 export type Totals = { files: bigint, lines: bigint, tokens: bigint, nodes: bigint, symbols: bigint, };
 

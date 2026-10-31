@@ -11,6 +11,7 @@ fn kind_of(name: &str) -> SubjectKind {
     match name {
         "directory" => SubjectKind::Directory,
         "function" => SubjectKind::Function,
+        "group" => SubjectKind::Group,
         _ => SubjectKind::File,
     }
 }

@@ -3,6 +3,7 @@
 
 mod composition;
 mod corpus;
+mod duplication;
 mod persist;
 mod rank;
 mod rules;
@@ -27,6 +28,8 @@ pub enum SubjectKind {
     Directory,
     File,
     Function,
+    /// Copies of one function, as a duplicate group.
+    Group,
 }
 
 impl SubjectKind {
@@ -36,6 +39,7 @@ impl SubjectKind {
             Self::Directory => "directory",
             Self::File => "file",
             Self::Function => "function",
+            Self::Group => "group",
         }
     }
 }
@@ -143,7 +147,12 @@ pub trait Detector: Sync {
 }
 
 /// Every shipped detector: one registry line each.
-pub static DETECTORS: &[&dyn Detector] = &[&composition::Composition, &size::Size, &rules::Rules];
+pub static DETECTORS: &[&dyn Detector] = &[
+    &composition::Composition,
+    &size::Size,
+    &duplication::Duplication,
+    &rules::Rules,
+];
 
 /// Runs every detector, in registry order.
 ///
