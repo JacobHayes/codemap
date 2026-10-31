@@ -137,7 +137,8 @@ function Summary({
   list,
   total,
   state,
-}: { list: AreaList; total: number | null } & Pick<Common, 'state'>) {
+  semantic,
+}: { list: AreaList; total: number | null; semantic: string } & Pick<Common, 'state'>) {
   const hidden = total === null ? 0 : total - list.matching;
   const where = state.path === '' ? 'in the codebase' : `under ${state.path}`;
   return (
@@ -151,6 +152,7 @@ function Summary({
         {hasFilters(state) && 'The role, concern and language filters apply to the map only. '}
         Select a path to show it on the map.
       </p>
+      {semantic !== '' && <p className="muted">{semantic}</p>}
     </div>
   );
 }
@@ -173,13 +175,14 @@ export function AreaQueue({ state, navigate }: Common) {
   }
   const list = areas.answer;
   const total = overview.state === 'ready' ? overview.answer.areas.total : null;
+  const semantic = overview.state === 'ready' ? overview.answer.semantic : '';
   return (
     <section
       className="areas"
       data-state="ready"
       data-view={state.area === null ? 'area-queue' : 'area-expanded'}
     >
-      <Summary list={list} total={total} state={state} />
+      <Summary list={list} total={total} state={state} semantic={semantic} />
       {list.areas.length === 0 ? (
         <p>No areas stand out here.</p>
       ) : (
