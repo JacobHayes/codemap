@@ -88,9 +88,12 @@ How code is written and verified. Companion to `ARCHITECTURE.md`.
 
 ## The check
 
-`mise run check` is the one gate, locally and in CI. Steps run in order, are silent when they
-pass, print their log when they fail, and end with one overall line. Outside CI, formatters and
-linters apply their fixes first. Target: under five minutes.
+`mise run check` is the one gate, locally and in CI. Steps are silent when they pass, print their
+log when they fail, and end with one overall line. Outside CI, formatters and linters apply their
+fixes first. Independent steps run concurrently: the order below is the dependency order (generate
+before the web steps, the web build before the binary, the binary before the browser tests), and
+the Rust tests wait for the web lint because they rewrite the generated types. Target: under five
+minutes.
 
 1. Format: `cargo fmt`, prettier.
 2. Lint: clippy, cargo-machete.

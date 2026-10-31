@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# The one gate (PRACTICES, The check). Steps run in order, are silent on pass, print their log on
-# failure, and end with one OVERALL line. Outside CI, fixers run first.
+# The one gate (PRACTICES, The check). Steps are silent on pass, print their log on failure, and
+# end with one OVERALL line. Outside CI, fixers run first. Independent steps run concurrently; a
+# phase waits for all of its steps, so every failing log is printed before the OVERALL FAIL line.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -23,42 +24,63 @@ done
 
 logs=${CHECK_LOG_DIR:-$(mktemp -d)}
 mkdir -p "$logs"
+rm -f "$logs"/*.failed
 start=$SECONDS
 ci=${CI:-}
 
 # step NAME [--tests] CMD...  --tests: the log must report a nonzero count of passed tests.
+# A failure leaves NAME.failed behind; `phase` reports it.
 step() {
   local name=$1 tests=0; shift
   if [ "$1" = --tests ]; then tests=1; shift; fi
   local log="$logs/$name.log"
   if ! "$@" >"$log" 2>&1 || { [ "$tests" = 1 ] && ! grep -Eq '[1-9][0-9]* passed' "$log"; }; then
-    cat "$log"
-    echo "OVERALL FAIL: $name ($((SECONDS - start))s)"
-    exit 1
+    touch "$logs/$name.failed"
+    return 1
   fi
 }
 
+# phase: wait for the background steps, then stop with every failed step's log if any failed.
+phase() {
+  wait
+  local failed=() marker name
+  for marker in "$logs"/*.failed; do
+    [ -e "$marker" ] || continue
+    name=$(basename "$marker" .failed)
+    cat "$logs/$name.log"
+    failed+=("$name")
+  done
+  [ ${#failed[@]} = 0 ] || { echo "OVERALL FAIL: ${failed[*]} ($((SECONDS - start))s)"; exit 1; }
+}
+
 web() { (cd web && "$@"); }
-step duckdb scripts/duckdb
-[ -d web/node_modules ] || step deps web npm ci
+step duckdb scripts/duckdb || true; phase
+[ -d web/node_modules ] || { step deps web npm ci || true; phase; }
 if [ -z "$ci" ]; then
-  step fix-rust cargo fmt
-  step fix-web web npx eslint --fix .
-  step fix-format web npx prettier --write .
+  step fix-rust cargo fmt &
+  { step fix-web web npx eslint --fix . && step fix-format web npx prettier --write .; } &
 else
-  step fmt cargo fmt --check
-  step format web npx prettier --check .
+  step fmt cargo fmt --check &
+  step format web npx prettier --check . &
 fi
-step clippy cargo clippy --all-targets --locked -- -D warnings
-step machete cargo machete
-step gen gen
-step tsc web npx tsc --noEmit
-step eslint web npx eslint --max-warnings 0 .
-step knip web npx knip
-step cargo-test --tests cargo test --locked
-step vitest --tests web npx vitest run
-step build-web web npm run build
-step build-bin cargo build --locked
-step playwright --tests web npx playwright test
+phase
+step gen gen || true; phase
+step build-web web npm run build || true; phase
+
+# The binary embeds the UI build, so Playwright follows build-bin. The Rust tests rewrite the wire
+# types the web steps read, so they follow those. Cargo serializes its own builds on the target dir
+# lock.
+step clippy cargo clippy --all-targets --locked -- -D warnings &
+step machete cargo machete &
+{
+  step tsc web npx tsc --noEmit &
+  step eslint web npx eslint --max-warnings 0 . &
+  step knip web npx knip &
+  step vitest --tests web npx vitest run &
+  wait
+  step cargo-test --tests cargo test --locked
+} &
+{ step build-bin cargo build --locked && step playwright --tests web npx playwright test; } &
+phase
 
 echo "OVERALL PASS ($((SECONDS - start))s)"
