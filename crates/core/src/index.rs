@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::Path;
-use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 
 use duckdb::params;
@@ -34,8 +33,6 @@ pub enum IndexError {
     Walk(#[from] ignore::Error),
     #[error("cannot read {path}: {source}")]
     Read { path: String, source: io::Error },
-    #[error("cannot hash the running executable: {0}")]
-    BuildId(io::Error),
     #[error(transparent)]
     Store(#[from] StoreError),
     #[error(transparent)]
@@ -97,8 +94,7 @@ impl Index {
         let roles = RoleOverrides::new(&config.roles)?;
         // Role overrides change what extraction stores, so a change to them re-extracts everything.
         let roles_key = format!("{:?}", config.roles);
-        let build_id = build_id()?;
-        let stale = store.meta("build_id")?.as_deref() != Some(build_id.as_str())
+        let stale = store.meta("build_id")?.as_deref() != Some(BUILD_ID)
             || store.meta("tokenizer")?.as_deref() != Some(TOKEN_ENCODING)
             || store.meta("roles")?.as_deref() != Some(roles_key.as_str());
         let stored = if stale {
@@ -129,14 +125,7 @@ impl Index {
 
         let writing = self.lock_writing();
         store.begin()?;
-        let written = self.write(
-            &scanned,
-            stale,
-            &stale_paths,
-            &config,
-            &build_id,
-            &roles_key,
-        );
+        let written = self.write(&scanned, stale, &stale_paths, &config, BUILD_ID, &roles_key);
         match written {
             Ok(()) => store.commit()?,
             Err(error) => {
@@ -147,7 +136,7 @@ impl Index {
         // Before the lock is released, so a semantic run waiting for it sees it was superseded.
         self.generation.fetch_add(1, Ordering::SeqCst);
         drop(writing);
-        self.note_semantic_pending(&config, &build_id)?;
+        self.note_semantic_pending(&config, BUILD_ID)?;
         let (file_count, line_count) = store.totals()?;
         Ok(IndexReport {
             file_count,
@@ -251,8 +240,7 @@ impl Index {
                 return Ok(status);
             }
         };
-        let build_id = build_id()?;
-        let key = self.analysis_key(&config, &build_id)?;
+        let key = self.analysis_key(&config, BUILD_ID)?;
         if self.store().meta("semantic")?.as_deref() == Some(key.as_str()) {
             let status = SemanticStatus::Unchanged;
             self.store()
@@ -309,21 +297,9 @@ impl Index {
     }
 }
 
-/// Hashes the running executable: any rebuild of codemap changes what extraction may produce.
-/// The executable cannot change under a running process, so the hash is computed once.
-fn build_id() -> Result<String, IndexError> {
-    static BUILD_ID: OnceLock<String> = OnceLock::new();
-    if let Some(id) = BUILD_ID.get() {
-        return Ok(id.clone());
-    }
-    let executable = std::env::current_exe().map_err(IndexError::BuildId)?;
-    let file = fs::File::open(executable).map_err(IndexError::BuildId)?;
-    let mut hasher = blake3::Hasher::new();
-    hasher.update_reader(file).map_err(IndexError::BuildId)?;
-    Ok(BUILD_ID
-        .get_or_init(|| hasher.finalize().to_hex().to_string())
-        .clone())
-}
+/// Digest of the core and language crates' sources, computed by `build.rs`: a change to either
+/// may change what extraction produces.
+const BUILD_ID: &str = env!("CODEMAP_INDEX_BUILD");
 
 /// Every file under `root` that ignore files let through, as sorted `/`-separated relative paths.
 fn discover(root: &Path) -> Result<Vec<String>, IndexError> {

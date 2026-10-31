@@ -81,7 +81,7 @@ seconds; tracking its dependencies would cost more code than it saves time. The 
 per-unit work (parsing, embeddings, model calls) is cached by content, so it is incremental
 anyway.
 
-**Staleness.** The index records the build of codemap that wrote it. A different build
+**Staleness.** The index records the build of codemap that wrote it: a digest of the core and language crates' sources and the lockfile. A different build
 re-extracts every file; cached model answers survive, because their keys do not depend on the
 build.
 

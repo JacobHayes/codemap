@@ -26,6 +26,8 @@ thiserror.workspace = true
 
 [build-dependencies]
 cc.workspace = true
+# Stable digest of the crate sources for the index build id.
+blake3.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
