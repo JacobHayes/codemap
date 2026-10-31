@@ -10,8 +10,8 @@ description = "The one gate: fix, lint, test, build, browser-test"
 run = "scripts/check"
 
 [tasks.review]
-description = "Independent review of the changes on top of main"
-run = "scripts/review"
+description = "Independent review of the committed changes on top of main (commit first: jj new)"
+run = "codex exec review --base main -m gpt-6-luna -c model_reasoning_effort=high -c 'sandbox_mode=\"read-only\"' --ephemeral"
 
 [tasks.gen]
 description = "Regenerate the TypeScript wire types from the Rust ones"
