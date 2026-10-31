@@ -6,10 +6,19 @@ use std::sync::LazyLock;
 use codemap_lang::{Concern, Kind, LANGUAGES, Language, Mark, Node, Role};
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator, Tree};
 
-use crate::facts::{LineFact, RefFact, SymbolFact, SymbolKind, split_lines, token_count};
+use crate::facts::{
+    LineFact, RefFact, SwitchFact, SymbolFact, SymbolKind, split_lines, token_count,
+};
 use crate::fingerprint::{Fingerprint, LINES_MIN, fingerprint};
+use crate::shape;
 
-type Parsed = (Vec<LineFact>, Vec<SymbolFact>, Vec<RefFact>);
+/// What one parse yields.
+pub struct Parsed {
+    pub lines: Vec<LineFact>,
+    pub symbols: Vec<SymbolFact>,
+    pub refs: Vec<RefFact>,
+    pub switches: Vec<SwitchFact>,
+}
 
 /// Each shipped language's tags query, compiled once.
 static QUERIES: LazyLock<BTreeMap<&'static str, Query>> = LazyLock::new(|| {
@@ -18,7 +27,11 @@ static QUERIES: LazyLock<BTreeMap<&'static str, Query>> = LazyLock::new(|| {
         .map(|language| {
             let query = Query::new(
                 &(language.grammar)(),
-                &format!("{}\n{}", language.tags_query, language.extra_tags_query),
+                &format!(
+                    "{}\n{}",
+                    language.tags_query,
+                    language.extra_tags_queries.join("\n")
+                ),
             )
             .expect("a shipped tags query compiles against its grammar");
             (language.name, query)
@@ -55,7 +68,16 @@ pub fn extract(language: &Language, text: &str, file_role: Role) -> Option<Parse
         .enumerate()
         .map(|(row, line)| grid.line(row, line, line_symbols[row], depths[row]))
         .collect();
-    Some((facts, symbols, refs))
+    let mut switches = shape::switches(language, &kinds, &tree.root_node(), source);
+    for switch in &mut switches {
+        switch.symbol = line_symbols[switch.start_line as usize - 1];
+    }
+    Some(Parsed {
+        lines: facts,
+        symbols,
+        refs,
+        switches,
+    })
 }
 
 fn to_line(row: usize) -> u32 {
@@ -147,8 +169,10 @@ impl<'a> Grid<'a> {
             Some(
                 Kind::Function
                 | Kind::Type
+                | Kind::Abstraction
                 | Kind::Module
                 | Kind::Branch
+                | Kind::Conditional
                 | Kind::Loop
                 | Kind::Handler,
             ) if node.parent().is_some() => {
@@ -175,7 +199,7 @@ impl<'a> Grid<'a> {
                 let through = node.next_named_sibling().map_or(last, |next| rows(&next).1);
                 self.paint_role(first, through.max(last), role);
             }
-            None => {}
+            Some(Mark::Abstraction) | None => {}
         }
     }
 
@@ -306,6 +330,7 @@ fn symbols_and_refs(
         let (first, last) = rows(&node);
         let index = u32::try_from(symbols.len()).unwrap_or(u32::MAX);
         line_symbols[first..=last].fill(Some(index));
+        let (forwards, abstraction) = shape_of(kind, language, kinds, &node, source);
         symbols.push(SymbolFact {
             kind,
             name,
@@ -316,6 +341,8 @@ fn symbols_and_refs(
             end_line: to_line(last),
             content_hash: blake3::hash(&source[start..end]).to_hex().to_string(),
             fingerprint: fingerprint_of(kind, language, &node, source, kinds),
+            forwards,
+            abstraction,
         });
         open.push(symbols.len() - 1);
         ranges.push((start, end));
@@ -357,4 +384,25 @@ fn definition_kind(
         }
         _ => None,
     }
+}
+
+/// A trait, interface or abstract class: the table says so, or the language's `mark` does.
+fn is_abstraction(language: &Language, kinds: &[Option<Kind>], node: &Node, source: &[u8]) -> bool {
+    kinds.get(usize::from(node.kind_id())).copied().flatten() == Some(Kind::Abstraction)
+        || (language.mark)(node, source) == Some(Mark::Abstraction)
+}
+
+/// What a definition's shape says: the callee a function only forwards to, and whether the
+/// type exists to be implemented.
+fn shape_of(
+    kind: SymbolKind,
+    language: &Language,
+    kinds: &[Option<Kind>],
+    node: &Node,
+    source: &[u8],
+) -> (Option<String>, bool) {
+    let forwards = (kind == SymbolKind::Function)
+        .then(|| shape::forwarded_callee(language, kinds, node, source))
+        .flatten();
+    (forwards, is_abstraction(language, kinds, node, source))
 }

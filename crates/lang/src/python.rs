@@ -10,10 +10,10 @@ pub static PYTHON: Language = Language {
         ("function_definition", Kind::Function),
         ("class_definition", Kind::Type),
         ("module", Kind::Module),
-        ("if_statement", Kind::Branch),
-        ("elif_clause", Kind::Branch),
+        ("if_statement", Kind::Conditional),
+        ("elif_clause", Kind::Conditional),
         ("else_clause", Kind::Branch),
-        ("match_statement", Kind::Branch),
+        ("match_statement", Kind::Switch),
         ("for_statement", Kind::Loop),
         ("while_statement", Kind::Loop),
         ("except_clause", Kind::Handler),
@@ -28,7 +28,10 @@ pub static PYTHON: Language = Language {
         ("future_import_statement", Kind::Import),
     ],
     tags_query: tree_sitter_python::TAGS_QUERY,
-    extra_tags_query: "",
+    extra_tags_queries: &[
+        "(class_definition superclasses: (argument_list [(identifier) @name (attribute attribute: (identifier) @name)])) @reference.implementation",
+    ],
+    case_label_fields: &["case_pattern"],
     callee_fields: &["function"],
     logging_callees: &[
         "debug",
@@ -55,6 +58,7 @@ fn mark(node: &Node, source: &[u8]) -> Option<Mark> {
         "class_definition" if name_of(node, source).starts_with("Test") => {
             Some(Mark::Role(Role::Test))
         }
+        "class_definition" if is_abstract(node, source) => Some(Mark::Abstraction),
         "expression_statement" if is_docstring(node) => Some(Mark::Concern(Concern::Comment)),
         _ => None,
     }
@@ -84,4 +88,15 @@ fn is_docstring(node: &Node) -> bool {
         _ => false,
     });
     lone_string && first && in_body
+}
+
+/// A class deriving from `ABC` or `Protocol`, or built by `ABCMeta`.
+fn is_abstract(node: &Node, source: &[u8]) -> bool {
+    let bases = node
+        .child_by_field_name("superclasses")
+        .and_then(|bases| bases.utf8_text(source).ok())
+        .unwrap_or("");
+    bases
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .any(|word| matches!(word, "ABC" | "ABCMeta" | "Protocol"))
 }

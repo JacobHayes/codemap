@@ -49,6 +49,12 @@ pub struct SymbolRow {
     pub parent: Option<String>,
     pub start_line: u32,
     pub end_line: u32,
+    /// The role of the symbol's first line.
+    pub role: String,
+    /// The callee a function only forwards its arguments to.
+    pub forwards: Option<String>,
+    /// A trait, interface or abstract class.
+    pub abstraction: bool,
 }
 
 /// The index under one root.
@@ -185,8 +191,10 @@ impl Index {
     /// Every symbol, in file and line order.
     pub(crate) fn symbols(&self) -> Result<Vec<SymbolRow>, QueryError> {
         let mut statement = self.store.connection().prepare(
-            "SELECT id, path, name, kind, parent, start_line, end_line FROM symbols
-             ORDER BY path, start_line, end_line DESC",
+            "SELECT s.id, s.path, s.name, s.kind, s.parent, s.start_line, s.end_line,
+                    coalesce(l.role, 'prod'), s.forwards, coalesce(s.abstraction, false)
+             FROM symbols s LEFT JOIN lines l ON l.path = s.path AND l.line = s.start_line
+             ORDER BY s.path, s.start_line, s.end_line DESC",
         )?;
         let rows = statement.query_map([], |row| {
             Ok(SymbolRow {
@@ -197,6 +205,9 @@ impl Index {
                 parent: row.get(4)?,
                 start_line: row.get(5)?,
                 end_line: row.get(6)?,
+                role: row.get(7)?,
+                forwards: row.get(8)?,
+                abstraction: row.get(9)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)

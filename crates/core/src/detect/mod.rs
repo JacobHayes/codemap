@@ -18,6 +18,7 @@ use crate::config::Config;
 use crate::reader::{Index, QueryError};
 
 pub use corpus::Corpus;
+pub(crate) use corpus::is_ranked;
 pub use rank::{Area, rank};
 
 /// What a finding is about.

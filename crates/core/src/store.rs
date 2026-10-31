@@ -25,9 +25,14 @@ CREATE TABLE IF NOT EXISTS lines (
 CREATE TABLE IF NOT EXISTS symbols (
     id VARCHAR, path VARCHAR, name VARCHAR, kind VARCHAR, parent VARCHAR,
     start_line UINTEGER, end_line UINTEGER, content_hash VARCHAR,
-    exact_hash UBIGINT, minhash BLOB, idents BLOB);
+    exact_hash UBIGINT, minhash BLOB, idents BLOB, forwards VARCHAR, abstraction BOOLEAN);
 CREATE TABLE IF NOT EXISTS refs (
     path VARCHAR, line UINTEGER, name VARCHAR, kind VARCHAR, symbol VARCHAR);
+CREATE TABLE IF NOT EXISTS switches (
+    path VARCHAR, symbol VARCHAR, start_line UINTEGER, end_line UINTEGER, labels VARCHAR);
+CREATE TABLE IF NOT EXISTS edges (
+    from_symbol VARCHAR, to_symbol VARCHAR, kind VARCHAR, confidence DOUBLE);
+CREATE TABLE IF NOT EXISTS measures (subject VARCHAR, key VARCHAR, value DOUBLE);
 CREATE TABLE IF NOT EXISTS \"similar\" (a VARCHAR, b VARCHAR, kind VARCHAR, score DOUBLE);
 CREATE TABLE IF NOT EXISTS duplicated (path VARCHAR, line UINTEGER);
 CREATE TABLE IF NOT EXISTS findings (
@@ -45,10 +50,20 @@ CREATE OR REPLACE VIEW line_facts AS
          LEFT JOIN duplicated d ON d.path = l.path AND d.line = l.line;
 ";
 
+/// Separates the labels of a switch in `switches.labels`: a control character no label holds.
+pub(crate) const LABEL_SEPARATOR: &str = "\u{1f}";
+
 /// Tables holding per-file rows, keyed by `path`.
-const FILE_TABLES: [&str; 4] = ["lines", "symbols", "refs", "files"];
+const FILE_TABLES: [&str; 5] = ["lines", "symbols", "refs", "switches", "files"];
 /// Tables the analyses and detectors rewrite from the whole index.
-const DERIVED_TABLES: [&str; 4] = ["similar", "duplicated", "findings", "areas"];
+const DERIVED_TABLES: [&str; 6] = [
+    "similar",
+    "duplicated",
+    "edges",
+    "measures",
+    "findings",
+    "areas",
+];
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -70,6 +85,24 @@ fn symbol_id(path: &str, index: u32) -> String {
 /// A signature as the little-endian bytes of its hashes.
 fn minhash_bytes(minhash: &[u32]) -> Vec<u8> {
     minhash.iter().flat_map(|hash| hash.to_le_bytes()).collect()
+}
+
+/// Appends the case sets of one file.
+fn append_switches(
+    rows: &mut duckdb::Appender<'_>,
+    path: &str,
+    facts: &FileFacts,
+) -> Result<(), StoreError> {
+    for switch in &facts.switches {
+        rows.append_row(params![
+            path,
+            switch.symbol.map(|symbol| symbol_id(path, symbol)),
+            switch.start_line,
+            switch.end_line,
+            switch.labels.join(LABEL_SEPARATOR)
+        ])?;
+    }
+    Ok(())
 }
 
 impl Store {
@@ -183,6 +216,7 @@ impl Store {
         let mut line_rows = self.connection.appender("lines")?;
         let mut symbol_rows = self.connection.appender("symbols")?;
         let mut ref_rows = self.connection.appender("refs")?;
+        let mut switch_rows = self.connection.appender("switches")?;
         for (path, hash, facts) in files {
             file_rows.append_row(params![
                 path,
@@ -222,7 +256,9 @@ impl Store {
                     symbol
                         .fingerprint
                         .as_ref()
-                        .map(|f| minhash_bytes(&f.idents))
+                        .map(|f| minhash_bytes(&f.idents)),
+                    symbol.forwards,
+                    symbol.abstraction
                 ])?;
             }
             for reference in &facts.refs {
@@ -234,11 +270,13 @@ impl Store {
                     reference.symbol.map(|symbol| symbol_id(path, symbol))
                 ])?;
             }
+            append_switches(&mut switch_rows, path, facts)?;
         }
         file_rows.flush()?;
         line_rows.flush()?;
         symbol_rows.flush()?;
         ref_rows.flush()?;
+        switch_rows.flush()?;
         Ok(())
     }
 

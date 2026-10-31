@@ -51,6 +51,10 @@ pub struct SymbolFact {
     pub content_hash: String,
     /// Functions and tests big enough to compare for duplication.
     pub fingerprint: Option<Fingerprint>,
+    /// For a function whose body only forwards its arguments to one call: that callee's name.
+    pub forwards: Option<String>,
+    /// A trait, interface or abstract class: a type that exists to be implemented.
+    pub abstraction: bool,
 }
 
 /// A name as written, before resolution.
@@ -61,6 +65,17 @@ pub struct RefFact {
     pub line: u32,
     /// Index into [`FileFacts::symbols`] of the symbol the reference sits in.
     pub symbol: Option<u32>,
+}
+
+/// The cases a `match`, `switch` or `if` chain tells apart, as comparable labels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchFact {
+    /// Index into [`FileFacts::symbols`] of the symbol the switch sits in.
+    pub symbol: Option<u32>,
+    pub start_line: u32,
+    pub end_line: u32,
+    /// Distinct, sorted, with payloads and catch-alls removed.
+    pub labels: Vec<String>,
 }
 
 /// Everything extracted from one file.
@@ -74,6 +89,7 @@ pub struct FileFacts {
     pub lines: Vec<LineFact>,
     pub symbols: Vec<SymbolFact>,
     pub refs: Vec<RefFact>,
+    pub switches: Vec<SwitchFact>,
 }
 
 /// How many leading bytes are searched for a NUL to call a file binary.
@@ -95,6 +111,7 @@ pub fn extract(path: &str, bytes: &[u8]) -> FileFacts {
                 lines: Vec::new(),
                 symbols: Vec::new(),
                 refs: Vec::new(),
+                switches: Vec::new(),
             };
         }
     };
@@ -108,15 +125,17 @@ pub fn extract(path: &str, bytes: &[u8]) -> FileFacts {
         lines: Vec::new(),
         symbols: Vec::new(),
         refs: Vec::new(),
+        switches: Vec::new(),
     };
     let parsed = language
         .filter(|_| !text.is_empty())
         .and_then(|language| syntax::extract(language, text, file_role));
     match parsed {
-        Some((lines, symbols, refs)) => {
-            facts.lines = lines;
-            facts.symbols = symbols;
-            facts.refs = refs;
+        Some(parsed) => {
+            facts.lines = parsed.lines;
+            facts.symbols = parsed.symbols;
+            facts.refs = parsed.refs;
+            facts.switches = parsed.switches;
         }
         None => facts.lines = text::extract(text, file_role),
     }

@@ -117,7 +117,10 @@ erDiagram
 - **`symbols`**: modules, types, functions, tests and document sections, each with its line
   range, parent and content hash.
 - **`refs`** are names as written; **`edges`** are references resolved to symbols, with a
-  confidence, because resolution is by name and can be ambiguous.
+  confidence, because resolution is by name and can be ambiguous (the rules are in
+  `core/src/link.rs`). Symbols also record, from their shape alone, the callee a function only
+  forwards its arguments to and whether a type exists to be implemented; **`switches`** holds
+  the case set of every `match`, `switch` and `if` chain over constants.
 - **`similar`** pairs symbols with a kind (exact, near, semantic) and a score: enough pairs to
   connect each cluster of copies, not every pair inside it. **`duplicated`** marks the lines of
   every copy but the longest in each cluster, which is what the `duplicated_lines` base measure
@@ -163,9 +166,9 @@ flowchart LR
 
 | Point | Contract | Shipped first |
 |---|---|---|
-| **Language** | A grammar; a table mapping node kinds to generic kinds (function, type, branch, loop, handler, assertion, call, comment, string, import); definition and reference queries. One file plus query files. | Rust, Python, TypeScript/JavaScript, Go, Svelte, Markdown |
+| **Language** | A grammar; a table mapping node kinds to generic kinds (function, type, abstraction, branch, conditional, switch, loop, handler, assertion, call, comment, string, import); definition and reference queries, which also name what a type implements. One file plus query files. | Rust, Python, TypeScript/JavaScript, Go, Svelte, Markdown |
 | **Extractor** | Turns an input into facts keyed to files, lines or symbols. | Syntax (driven by Languages), plain text for every other file. Later: coverage, profiles, test durations |
-| **Analysis** | Reads the index; writes edges, similar pairs, labels or measures; declares what it reads and writes. | Link, similarity, graph measures, naming families |
+| **Analysis** | Reads the index; writes edges, similar pairs, labels or measures; declares what it reads and writes. | Link (edges, fan-in and fan-out), similarity |
 | **Detector** | Reads the index; emits findings with measures and evidence. Detector-specific detail is data on the finding, never a new type. | The eight above-the-fold detectors in `INTENT.md` |
 | **Decision model** / **LLM** | Typed questions in, probabilities out / text in, text out. | Two vendors each |
 

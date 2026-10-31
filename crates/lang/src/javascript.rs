@@ -12,13 +12,14 @@ pub(crate) const KINDS: &[(&str, Kind)] = &[
     ("method_definition", Kind::Function),
     ("class_declaration", Kind::Type),
     ("class", Kind::Type),
-    ("abstract_class_declaration", Kind::Type),
-    ("interface_declaration", Kind::Type),
+    ("abstract_class_declaration", Kind::Abstraction),
+    ("interface_declaration", Kind::Abstraction),
     ("enum_declaration", Kind::Type),
     ("type_alias_declaration", Kind::Type),
     ("internal_module", Kind::Module),
     ("program", Kind::Module),
-    ("if_statement", Kind::Branch),
+    ("if_statement", Kind::Conditional),
+    ("switch_statement", Kind::Switch),
     ("else_clause", Kind::Branch),
     ("ternary_expression", Kind::Branch),
     ("switch_case", Kind::Branch),
@@ -35,6 +36,8 @@ pub(crate) const KINDS: &[(&str, Kind)] = &[
     ("template_string", Kind::String),
     ("import_statement", Kind::Import),
 ];
+
+pub(crate) const CASE_LABEL_FIELDS: &[&str] = &["value"];
 
 pub(crate) const LOGGING_CALLEES: &[&str] =
     &["trace", "debug", "info", "warn", "error", "fatal", "log"];
@@ -61,7 +64,10 @@ pub static JAVASCRIPT: Language = Language {
     grammar: || tree_sitter_javascript::LANGUAGE.into(),
     kinds: KINDS,
     tags_query: tree_sitter_javascript::TAGS_QUERY,
-    extra_tags_query: "",
+    extra_tags_queries: &[
+        "(class_declaration (class_heritage (identifier) @name)) @reference.implementation",
+    ],
+    case_label_fields: CASE_LABEL_FIELDS,
     callee_fields: &["function"],
     logging_callees: LOGGING_CALLEES,
     assertion_prefixes: ASSERTION_PREFIXES,

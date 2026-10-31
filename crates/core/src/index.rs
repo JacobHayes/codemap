@@ -12,9 +12,9 @@ use crate::config::{Config, ConfigError, RoleOverrides};
 use crate::detect::{detect, rank};
 use crate::facts::{FileFacts, TOKEN_ENCODING, extract};
 use crate::reader::{Index, QueryError};
-use crate::similarity;
 use crate::store::{STATE_DIR, Store, StoreError};
 use crate::worktree::seed;
+use crate::{link, similarity};
 
 /// Version-control directories are never part of the codebase, whatever the ignore files say.
 const SKIPPED_DIRS: [&str; 4] = [".git", ".jj", ".hg", ".svn"];
@@ -186,6 +186,7 @@ impl Index {
         if self.store().meta("analysis")?.as_deref() == Some(key.as_str()) {
             return Ok(());
         }
+        link::run(self)?;
         similarity::run(self)?;
         let mut findings = detect(self, config)?;
         let areas = rank(&mut findings, config);

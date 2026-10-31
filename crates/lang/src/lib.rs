@@ -101,8 +101,14 @@ impl Concern {
 pub enum Kind {
     Function,
     Type,
+    /// A trait, interface or abstract class: a type that exists to be implemented.
+    Abstraction,
     Module,
     Branch,
+    /// An `if` (or `elif`): a branch that can head a chain of comparisons.
+    Conditional,
+    /// A `match` or `switch`, whose cases are its branches.
+    Switch,
     Loop,
     Handler,
     Assertion,
@@ -123,6 +129,9 @@ pub enum Mark {
     TestFunction,
     /// The node's lines have this concern.
     Concern(Concern),
+    /// The node is a type that exists to be implemented, though its node kind alone does not
+    /// say so (a Python class deriving from `ABC`).
+    Abstraction,
 }
 
 /// A language as data.
@@ -135,9 +144,13 @@ pub struct Language {
     pub kinds: &'static [(&'static str, Kind)],
     /// The grammar crate's tags query: definitions become symbols, references become refs.
     pub tags_query: &'static str,
-    /// Further definition patterns for scopes the tags query leaves out, such as Rust `impl`
-    /// blocks, so a method's parent is its type.
-    pub extra_tags_query: &'static str,
+    /// Further patterns the tags query leaves out: scopes such as Rust `impl` blocks (so a
+    /// method's parent is its type), and `@reference.implementation` for what a type implements
+    /// or extends, which is how the single-implementation signal finds implementors.
+    pub extra_tags_queries: &'static [&'static str],
+    /// Where a case of a `Switch` keeps what it matches: a field name, or the kind of a child
+    /// when the grammar has no field for it. The first that exists wins.
+    pub case_label_fields: &'static [&'static str],
     /// Fields of a call node that hold the callee.
     pub callee_fields: &'static [&'static str],
     /// Callee names (last path segment) that are logging.
