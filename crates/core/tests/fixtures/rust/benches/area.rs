@@ -1,0 +1,1 @@
+fn bench_area() {}

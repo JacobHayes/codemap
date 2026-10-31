@@ -1,6 +1,18 @@
 //! The query layer: one `Query` in, one `Answer` out. Every surface (CLI, MCP, web UI) is a thin
 //! shell over it.
 
+mod facts;
+mod index;
+mod role;
+mod store;
+mod syntax;
+mod text;
+
+pub use facts::{FileFacts, LineFact, RefFact, SymbolFact, SymbolKind, extract};
+pub use index::{IndexError, IndexReport, index};
+pub use role::role_for_path;
+pub use store::STATE_DIR;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

@@ -11,6 +11,18 @@ publish.workspace = true
 [dependencies]
 serde.workspace = true
 ts-rs.workspace = true
+duckdb.workspace = true
+bpe-openai.workspace = true
+blake3.workspace = true
+ignore.workspace = true
+rayon.workspace = true
+tree-sitter.workspace = true
+
+codemap-lang.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true
