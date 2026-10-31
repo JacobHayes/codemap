@@ -85,7 +85,7 @@ function swatch(lightness: number, chroma: number, hue: number): Swatch {
 // dark ground, so a bigger value is always the more prominent mark. `low` stays clear of the
 // neutral fills below, so no step reads as "no value".
 const LIGHTNESS = {
-  light: { low: 0.8, high: 0.42 },
+  light: { low: 0.74, high: 0.42 },
   dark: { low: 0.44, high: 0.88 },
 } as const;
 

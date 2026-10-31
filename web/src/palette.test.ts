@@ -36,8 +36,8 @@ describe('palette', () => {
       const group = neutralSwatch('group', theme).lightness;
       const lowest = scaleSwatches(9, theme)[0]?.lightness ?? 0;
       for (const l of [lowest]) {
-        expect(Math.abs(l - leaf)).toBeGreaterThanOrEqual(0.05);
-        expect(Math.abs(l - group)).toBeGreaterThanOrEqual(0.05);
+        expect(Math.abs(l - leaf)).toBeGreaterThanOrEqual(0.1);
+        expect(Math.abs(l - group)).toBeGreaterThanOrEqual(0.1);
       }
     }
   });
