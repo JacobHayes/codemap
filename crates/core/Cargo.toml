@@ -10,6 +10,8 @@ publish.workspace = true
 
 [dependencies]
 serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
 ts-rs.workspace = true
 duckdb.workspace = true
 bpe-openai.workspace = true

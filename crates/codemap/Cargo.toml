@@ -13,11 +13,12 @@ axum.workspace = true
 clap.workspace = true
 codemap-core.workspace = true
 rust-embed.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
+tempfile.workspace = true
 tower.workspace = true
 
 [lints]

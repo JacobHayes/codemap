@@ -13,9 +13,11 @@ publish = false
 [workspace.dependencies]
 codemap-core = { path = "crates/core" }
 codemap-lang = { path = "crates/lang" }
-# Wire types for the query layer, and the JSON they travel as.
+# Wire types for the query layer, and the JSON they travel as (also how findings keep their detail).
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+# Reads `.codemap/config.toml`: rules, acknowledgements and role overrides.
+toml = { version = "1.1.8", default-features = false, features = ["std", "serde", "parse"] }
 # Typed errors at module boundaries (PRACTICES, Code).
 thiserror = { version = "2.0.21", default-features = false }
 # Generates the TypeScript wire types from the Rust ones, so the UI cannot drift.
