@@ -24,13 +24,10 @@ use tokio_stream::wrappers::WatchStream;
 
 use crate::watch::{WatchError, Watcher, watch as watch_tree};
 
-/// The web build. The digest makes cargo recompile when `web/dist` changes.
+/// The web build, embedded; `build.rs` recompiles it when `web/dist` changes.
 #[derive(Embed)]
 #[folder = "../../web/dist"]
 struct Assets;
-
-/// Digest of the embedded build, shown at start-up so a stale embed is visible.
-const WEB_DIGEST: &str = env!("CODEMAP_WEB_DIGEST");
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServeError {
@@ -185,7 +182,7 @@ pub fn run(root: &Path, port: u16) -> Result<(), ServeError> {
             .await
             .map_err(|source| ServeError::Bind { port, source })?;
         let bound = listener.local_addr().map_err(ServeError::Serve)?;
-        println!("codemap serving http://{bound} (web build {WEB_DIGEST})");
+        println!("codemap serving http://{bound}");
         axum::serve(listener, router(served))
             .await
             .map_err(ServeError::Serve)
