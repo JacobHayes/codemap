@@ -14,7 +14,7 @@ use crate::reader::{Index, QueryError};
 use codemap_lang::{Concern, LANGUAGES, Role};
 
 pub use overview::{AreaCounts, DetectorCount, Overview, Share, Totals};
-pub use scale::{SCALE_STEPS, Scale, ScaleKind, Spacing};
+pub use scale::{SCALE_STEPS, Scale, Spacing};
 pub use tree::{DEPTH_DEFAULT, Hierarchy, SizeInfo, Tree, TreeNode};
 
 /// The schema name and version every serialized answer carries.

@@ -187,7 +187,7 @@ impl Measure {
         }
     }
 
-    /// Ratios have a meaningful middle at 1:1.
+    /// A ratio of two sums, rather than a sum.
     #[must_use]
     pub fn is_ratio(&self) -> bool {
         matches!(self, Self::Ratio { .. })

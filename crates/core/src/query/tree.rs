@@ -170,6 +170,9 @@ fn finish(accs: &[Acc], args: &Args, unit: &str) -> Tree {
             has_child[parent] = true;
         }
     }
+    // A ratio of zero (no tests, no handling) is not a finding: it takes the plain fill.
+    let quiet_zero = args.color.as_ref().is_some_and(|c| c.0.is_ratio());
+    let coloured = |value: f64| !(quiet_zero && value <= 0.0);
     let tile_values: Vec<f64> = accs
         .iter()
         .enumerate()
@@ -179,7 +182,7 @@ fn finish(accs: &[Acc], args: &Args, unit: &str) -> Tree {
     let scale = args
         .color
         .as_ref()
-        .and_then(|(measure, label)| scale::build(label, measure.is_ratio(), &tile_values));
+        .and_then(|(_, label)| scale::build(label, quiet_zero, &tile_values));
     let total = accs.first().map_or(0.0, |acc| acc.inclusive[0]);
     let nodes = accs
         .iter()
@@ -193,7 +196,10 @@ fn finish(accs: &[Acc], args: &Args, unit: &str) -> Tree {
                 name: acc.link.name.clone(),
                 size: acc.own,
                 total: acc.inclusive[0],
-                color_step: scale.as_ref().zip(value).map(|(scale, v)| scale.step(v)),
+                color_step: scale
+                    .as_ref()
+                    .zip(value.filter(|v| coloured(*v)))
+                    .map(|(scale, v)| scale.step(v)),
                 value,
                 kind: acc.link.kind.clone(),
                 path: acc.link.path.clone(),

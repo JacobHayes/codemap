@@ -30,8 +30,8 @@ pub use measure::{
 };
 pub use query::{
     Answer, AreaCounts, AreaDetail, AreaList, Catalog, DEPTH_DEFAULT, DetectorCount, DetectorInfo,
-    Dimension, Envelope, Hierarchy, Overview, Query, SCALE_STEPS, SCHEMA, Scale, ScaleKind, Share,
-    SizeInfo, Spacing, Totals, Tree, TreeNode, answer,
+    Dimension, Envelope, Hierarchy, Overview, Query, SCALE_STEPS, SCHEMA, Scale, Share, SizeInfo,
+    Spacing, Totals, Tree, TreeNode, answer,
 };
 pub use reader::{Index, QueryError};
 pub use role::role_for_path;

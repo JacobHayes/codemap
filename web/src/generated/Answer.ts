@@ -129,17 +129,11 @@ export type Overview = { totals: Totals, byRole: Array<Share>, byConcern: Array<
 /**
  * What the legend needs: the measure, the range, and where each bin starts.
  */
-export type Scale = { kind: ScaleKind, spacing: Spacing, steps: number, measure: string, min: number, max: number, 
-/**
- * The value in the middle of a diverging scale.
- */
-midpoint: number | null, 
+export type Scale = { spacing: Spacing, steps: number, measure: string, min: number, max: number, 
 /**
  * The lower bound of each step, then the upper bound of the last: `steps + 1` values.
  */
 edges: Array<number>, };
-
-export type ScaleKind = "sequential" | "diverging";
 
 /**
  * One value of a dimension and its part of the whole.

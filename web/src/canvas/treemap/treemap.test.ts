@@ -7,13 +7,11 @@ import { paint } from './paint';
 import { pick } from './pick';
 
 const SCALE: Scale = {
-  kind: 'sequential',
   spacing: 'linear',
   steps: 7,
   measure: 'lines',
   min: 0,
   max: 100,
-  midpoint: null,
   edges: [0, 14, 28, 42, 57, 71, 85, 100],
 };
 

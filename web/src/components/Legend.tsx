@@ -5,13 +5,13 @@ import { useTheme } from '../useTheme';
 
 type LegendProps = { scale: Scale; catalog: Catalog | null };
 
-/** The colour scale in words and numbers: the measure, the range, and what the middle means. */
+/** The colour scale in words and numbers: the measure and its range. */
 export function Legend({ scale, catalog }: LegendProps) {
   const theme = useTheme();
   const def = catalog?.measures.find((m) => m.name === scale.measure);
   const isRatio = def?.measure.kind === 'ratio';
   const number = isRatio ? plain : compact;
-  const swatches = scaleSwatches(scale.kind, scale.steps, theme);
+  const swatches = scaleSwatches(scale.steps, theme);
   return (
     <figure className="legend" aria-label="Colour scale">
       <figcaption>
@@ -24,7 +24,6 @@ export function Legend({ scale, catalog }: LegendProps) {
       </div>
       <div className="legend-range">
         <span>{number(scale.min)}</span>
-        {scale.midpoint !== null && <span>{`${number(scale.midpoint)} is even`}</span>}
         <span>{number(scale.max)}</span>
       </div>
       <p className="legend-note">
@@ -34,7 +33,7 @@ export function Legend({ scale, catalog }: LegendProps) {
           style={{ background: neutralSwatch('leaf', theme).css }}
           aria-hidden="true"
         />
-        No value
+        {isRatio ? 'Zero or no value' : 'No value'}
       </p>
     </figure>
   );

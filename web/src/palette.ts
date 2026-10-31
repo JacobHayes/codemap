@@ -2,10 +2,10 @@
 // from here. Keep each value equal to its token in design/tokens.css.
 export const ACCENT = '#2f6fff';
 
-// Measure scales (DESIGN, Tokens). Each is defined once, in OKLCH, with even lightness steps in
-// the neutral ramp's hue family (hue 250); canvas fills and legends both read it from here.
+// The measure scale (DESIGN, Tokens). It is defined once, in OKLCH, with even lightness steps
+// starting in the neutral ramp's hue family (hue 250); canvas fills and legends both read it
+// from here.
 export type Theme = 'light' | 'dark';
-export type ScaleKind = 'sequential' | 'diverging';
 export type Rgb = readonly [number, number, number];
 
 export type Swatch = {
@@ -83,36 +83,22 @@ function swatch(lightness: number, chroma: number, hue: number): Swatch {
 
 // Lightness runs [low, high] across the scale: low magnitudes are pale on paper and deep on the
 // dark ground, so a bigger value is always the more prominent mark. `low` stays clear of the
-// neutral fills below, so no step reads as "no value"; `mid` is the diverging midpoint.
+// neutral fills below, so no step reads as "no value".
 const LIGHTNESS = {
-  light: { low: 0.8, mid: 0.97, high: 0.42 },
-  dark: { low: 0.44, mid: 0.44, high: 0.88 },
+  light: { low: 0.8, high: 0.42 },
+  dark: { low: 0.44, high: 0.88 },
 } as const;
 
-// Neither scale uses the accent's blue (selection must stand out): both end in amber, the
-// diverging one starting from a low-chroma steel.
+// The scale runs from the neutral ramp to amber and never uses the accent's blue (selection must
+// stand out).
 const AMBER_HUE = 70;
-const STEEL_HUE = 240;
 
-/** `steps` swatches, lowest value first. A diverging scale's middle is its neutral. */
-export function scaleSwatches(kind: ScaleKind, steps: number, theme: Theme): Swatch[] {
-  const { low, mid, high } = LIGHTNESS[theme];
+/** `steps` swatches, lowest value first. */
+export function scaleSwatches(steps: number, theme: Theme): Swatch[] {
+  const { low, high } = LIGHTNESS[theme];
   return Array.from({ length: steps }, (_, i) => {
     const t = steps === 1 ? 0.5 : i / (steps - 1);
-    if (kind === 'sequential') {
-      return swatch(
-        low + (high - low) * t,
-        0.012 + 0.13 * t ** 1.3,
-        t < 0.08 ? RAMP_HUE : AMBER_HUE,
-      );
-    }
-    const away = Math.abs(2 * t - 1);
-    const warm = t > 0.5;
-    return swatch(
-      mid + (high - mid) * away,
-      0.012 + (warm ? 0.13 : 0.045) * away,
-      warm ? AMBER_HUE : STEEL_HUE,
-    );
+    return swatch(low + (high - low) * t, 0.012 + 0.13 * t ** 1.3, t < 0.08 ? RAMP_HUE : AMBER_HUE);
   });
 }
 

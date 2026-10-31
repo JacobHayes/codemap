@@ -35,12 +35,12 @@ Screen code uses tokens only: no raw colours, no own sizes or durations. A theme
 is one `light-dark(light, dark)` declaration; light and dark are both native and follow the OS.
 
 - **Neutrals** are steps of one cool ramp; every role picks a step.
-- **Measure scales.** One sequential scale for magnitudes, running from the neutral ramp to a
-  warm amber, and one diverging scale for ratios around a meaningful midpoint (such as 1:1),
-  running from a low-chroma steel through neutral to the same amber. Neither uses the accent's
-  blue, so a selection always stands out on a map. Both are defined in OKLCH with even lightness
-  steps and read in both themes. A value with no colour is the plain neutral fill, never a scale
-  step. Scales are generated from one definition shared by the canvases and their legends.
+- **Measure scale.** One sequential scale serves magnitudes and ratios alike, running from the
+  neutral ramp to a warm amber, so a higher value is always warmer and the low end stays quiet.
+  A ratio of zero (no tests, no handling) is not a finding: like a value with no colour it is the
+  plain neutral fill, never a scale step. It never uses the accent's blue, so a selection always
+  stands out on a map. It is defined in OKLCH with even lightness steps and reads in both themes.
+  The scale is generated from one definition shared by the canvases and their legends.
 - **Categorical colours** are few and used only for role or concern, where the category is the
   point of the view. Everything else is neutral.
 - **Contrast floors** (text 4.5:1 on its ground, labels on every scale step they can sit on) are

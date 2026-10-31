@@ -63,7 +63,7 @@ test('a ratio colour measure shows its scale in words and numbers', async ({ pag
   await page.goto('/?color=test_to_prod_ratio');
   const legend = page.getByRole('figure', { name: 'Colour scale' });
   await expect(legend).toContainText('Test lines per line of production code');
-  await expect(legend).toContainText('is even');
+  await expect(legend).toContainText('Zero or no value');
 });
 
 test('choosing an area in the queue shows it on the map', async ({ page }) => {

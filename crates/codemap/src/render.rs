@@ -158,11 +158,10 @@ fn tree_text(tree: &Tree) -> String {
     if let Some(scale) = &tree.scale {
         let _ = writeln!(
             out,
-            "colour: {} from {} to {} ({:?}, {:?}, {} steps)",
+            "colour: {} from {} to {} ({:?}, {} steps)",
             scale.measure,
             number(scale.min),
             number(scale.max),
-            scale.kind,
             scale.spacing,
             scale.steps
         )

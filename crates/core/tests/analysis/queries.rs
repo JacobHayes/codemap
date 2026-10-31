@@ -72,18 +72,8 @@ fn depth_aggregates_deeper_mass_into_the_deepest_drawn_ancestor() {
     let dir = tempfile::tempdir().unwrap();
     mixed_tree(dir.path());
     let index = indexed(dir.path());
-    let deep = tree_with(
-        &index,
-        Filter::default(),
-        Some("test_to_prod_ratio"),
-        Some(10),
-    );
-    let shallow = tree_with(
-        &index,
-        Filter::default(),
-        Some("test_to_prod_ratio"),
-        Some(2),
-    );
+    let deep = tree_with(&index, Filter::default(), Some("lines"), Some(10));
+    let shallow = tree_with(&index, Filter::default(), Some("lines"), Some(2));
     assert_eq!(deep.total, shallow.total);
     let depth_of = |tree: &Tree, mut id: u32| {
         let mut depth = 0;
@@ -212,10 +202,11 @@ fn filters_narrow_every_dimension() {
 }
 
 #[test]
-fn ratio_measures_divide_sums_and_colour_symmetrically_around_one() {
+fn ratio_measures_divide_sums_and_colour_sequentially_with_zero_plain() {
     let dir = tempfile::tempdir().unwrap();
     mixed_tree(dir.path());
-    write(dir.path(), "src/in_test.rs", "fn a() {}\n");
+    write(dir.path(), "src/tests/t.rs", &plain_functions("it", 2));
+    write(dir.path(), "lib/x.rs", "fn a() {}\n");
     let index = indexed(dir.path());
     let inline = MeasureRef::Inline(Measure::Ratio {
         numerator: codemap_core::Term::new(
@@ -238,7 +229,7 @@ fn ratio_measures_divide_sums_and_colour_symmetrically_around_one() {
         size: None,
         color: Some(inline),
         filter: Filter::default(),
-        depth: Some(3),
+        depth: Some(1),
     };
     let tree = tree_of(&index, &query);
     let root = &tree.nodes[0];
@@ -256,14 +247,32 @@ fn ratio_measures_divide_sums_and_colour_symmetrically_around_one() {
     };
     assert!((root.value.unwrap() - total("test") / total("prod")).abs() < 1e-9);
     let scale = tree.scale.unwrap();
-    assert_eq!(scale.midpoint, Some(1.0));
+    // A ratio of zero takes the plain fill; every other ratio is a step of the scale.
+    let zero = tree.nodes.iter().find(|n| n.path == "lib").unwrap();
+    assert_eq!(zero.value, Some(0.0));
+    assert_eq!(zero.color_step, None);
+    assert!(scale.min > 0.0);
+    // With nothing but zeros the scale still names the measure, and no tile takes a step.
+    let flat = tree_with(
+        &index,
+        Filter {
+            path: Some("lib".into()),
+            ..Filter::default()
+        },
+        Some("test_to_prod_ratio"),
+        Some(1),
+    );
+    assert!(flat.scale.is_some());
+    assert!(flat.nodes.iter().all(|n| n.color_step.is_none()));
     assert!(
-        (scale.min * scale.max - 1.0).abs() < 1e-9,
-        "symmetric in log space"
+        tree.nodes
+            .iter()
+            .filter(|n| n.value.is_some_and(|v| v > 0.0))
+            .all(|n| n.color_step.is_some())
     );
     assert_eq!(scale.edges.len() as u32, scale.steps + 1);
     // A tile with no prod lines has no ratio, so no colour.
-    let tests = tree.nodes.iter().find(|n| n.path == "tests/t.rs").unwrap();
+    let tests = tree.nodes.iter().find(|n| n.path == "tests").unwrap();
     assert_eq!(tests.value, None);
     assert_eq!(tests.color_step, None);
 }
@@ -277,7 +286,6 @@ fn colour_steps_never_decrease_with_value_and_log_spacing_is_announced() {
     let index = indexed(dir.path());
     let tree = tree_with(&index, Filter::default(), Some("lines"), Some(5));
     let scale = tree.scale.clone().unwrap();
-    assert_eq!(scale.kind, codemap_core::ScaleKind::Sequential);
     assert_eq!(scale.spacing, codemap_core::Spacing::Log);
     let mut pairs: Vec<(f64, u32)> = tree
         .nodes

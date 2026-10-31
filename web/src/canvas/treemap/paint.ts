@@ -27,7 +27,7 @@ export function paint(
 ): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  const steps = scene.scale ? scaleSwatches(scene.scale.kind, scene.scale.steps, theme) : [];
+  const steps = scene.scale ? scaleSwatches(scene.scale.steps, theme) : [];
   const snap = (v: number) => Math.round(v * scale);
   for (let i = 0; i < scene.count; i++) {
     const x0 = snap(scene.x0[i] ?? 0);

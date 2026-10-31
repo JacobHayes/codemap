@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { contrast, neutralSwatch, scaleSwatches, type ScaleKind, type Theme } from './palette';
+import { contrast, neutralSwatch, scaleSwatches, type Theme } from './palette';
 
-const kinds: ScaleKind[] = ['sequential', 'diverging'];
 const themes: Theme[] = ['light', 'dark'];
 const stepCounts = [1, 2, 3, 5, 7, 9, 12];
 
@@ -11,7 +10,7 @@ describe('palette', () => {
       const all = [
         neutralSwatch('leaf', theme),
         neutralSwatch('group', theme),
-        ...kinds.flatMap((kind) => stepCounts.flatMap((n) => scaleSwatches(kind, n, theme))),
+        ...stepCounts.flatMap((n) => scaleSwatches(n, theme)),
       ];
       for (const s of all) expect(contrast(s.rgb, s.inkRgb)).toBeGreaterThanOrEqual(4.5);
     }
@@ -20,7 +19,7 @@ describe('palette', () => {
   it('steps the sequential scale monotonically and evenly in lightness', () => {
     for (const theme of themes) {
       for (const n of stepCounts.filter((c) => c > 2)) {
-        const l = scaleSwatches('sequential', n, theme).map((s) => s.lightness);
+        const l = scaleSwatches(n, theme).map((s) => s.lightness);
         const deltas = l.slice(1).map((v, i) => v - (l[i] ?? 0));
         const sign = Math.sign(deltas[0] ?? 0);
         for (const d of deltas) {
@@ -31,26 +30,12 @@ describe('palette', () => {
     }
   });
 
-  it('puts the diverging midpoint at the extreme of lightness, symmetric about it', () => {
-    for (const theme of themes) {
-      const l = scaleSwatches('diverging', 9, theme).map((s) => s.lightness);
-      const mid = l[4] ?? 0;
-      for (let i = 0; i < 4; i++) {
-        expect(l[i]).toBeCloseTo(l[8 - i] ?? 0, 9);
-        expect(Math.abs((l[i] ?? 0) - mid)).toBeGreaterThan(Math.abs((l[i + 1] ?? 0) - mid));
-      }
-    }
-  });
-
   it('keeps "no value" distinct from the scales\' low and middle steps', () => {
     for (const theme of themes) {
       const leaf = neutralSwatch('leaf', theme).lightness;
       const group = neutralSwatch('group', theme).lightness;
-      const others = [
-        ...scaleSwatches('sequential', 9, theme).slice(0, 1),
-        ...scaleSwatches('diverging', 9, theme).slice(4, 5),
-      ].map((s) => s.lightness);
-      for (const l of others) {
+      const lowest = scaleSwatches(9, theme)[0]?.lightness ?? 0;
+      for (const l of [lowest]) {
         expect(Math.abs(l - leaf)).toBeGreaterThanOrEqual(0.05);
         expect(Math.abs(l - group)).toBeGreaterThanOrEqual(0.05);
       }
