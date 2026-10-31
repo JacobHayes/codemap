@@ -15,6 +15,7 @@ export const STATES: Record<ViewState, StateSpec> = {
   'treemap-drilled': { url: () => '/?path=crates/core' },
   'treemap-selected': { url: () => '/?sel=crates' },
   'treemap-filtered': { url: () => '/?role=test' },
+  'treemap-generated-shown': { url: () => '/?hide-generated=false' },
   'treemap-colour': { url: () => '/?color=handler_lines' },
   'treemap-ratio-colour': { url: () => '/?color=test_to_prod_ratio' },
   'treemap-tooltip': {

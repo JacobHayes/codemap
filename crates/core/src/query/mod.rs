@@ -214,8 +214,12 @@ fn validate(filter: &Filter) -> Result<(), QueryError> {
         ("concern", &filter.concern),
         ("symbolKind", &filter.symbol_kind),
     ];
-    for (dimension, value) in given {
-        let Some(value) = value else { continue };
+    let excluded = filter.exclude_roles.iter().map(|role| ("role", role));
+    for (dimension, value) in given
+        .into_iter()
+        .filter_map(|(dimension, value)| Some((dimension, value.as_ref()?)))
+        .chain(excluded)
+    {
         let known = catalog
             .dimensions
             .iter()

@@ -13,6 +13,8 @@ export type UrlState = {
   role: string | null;
   concern: string | null;
   language: string | null;
+  /** Whether the map leaves out generated and vendored lines, which dominate it otherwise. */
+  hideGenerated: boolean;
   /** The size measure's catalog name. */
   size: string;
   /** The colour measure's catalog name; null for no colour. */
@@ -29,11 +31,18 @@ export const DEFAULT_STATE: UrlState = {
   role: null,
   concern: null,
   language: null,
+  hideGenerated: true,
   size: 'lines',
   color: null,
   selected: null,
   area: null,
 };
+
+/** The roles the map leaves out unless asked to show them. */
+export const HIDDEN_ROLES = ['generated', 'vendored'];
+
+/** Whether the default hiding applies: an explicit role filter wins over it. */
+export const hidesGenerated = (state: UrlState) => state.hideGenerated && state.role === null;
 
 export const FILTER_DIMENSIONS = ['role', 'concern', 'language'] as const;
 export type FilterDimension = (typeof FILTER_DIMENSIONS)[number];
@@ -45,6 +54,7 @@ const KEYS: Record<keyof UrlState, string> = {
   role: 'role',
   concern: 'concern',
   language: 'language',
+  hideGenerated: 'hide-generated',
   size: 'size',
   color: 'color',
   selected: 'sel',
@@ -60,6 +70,7 @@ export function parseState(search: string): UrlState {
     role: text('role'),
     concern: text('concern'),
     language: text('language'),
+    hideGenerated: text('hideGenerated') !== 'false',
     size: text('size') ?? DEFAULT_STATE.size,
     color: text('color'),
     selected: text('selected'),

@@ -14,6 +14,10 @@ export type Filter = {
  */
 path?: string, language?: string, role?: string, concern?: string, 
 /**
+ * Roles to leave out; lines of any of them do not match.
+ */
+excludeRoles: Array<string>, 
+/**
  * The kind of the innermost symbol a line sits in.
  */
 symbolKind?: string, };

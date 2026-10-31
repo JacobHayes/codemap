@@ -175,6 +175,7 @@ fn dispatch(command: Command) -> Result<(), Failure> {
                     role,
                     concern,
                     symbol_kind,
+                    ..Filter::default()
                 },
                 depth,
             };

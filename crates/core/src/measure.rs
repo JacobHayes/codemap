@@ -14,6 +14,8 @@ pub struct Filter {
     pub language: Option<String>,
     pub role: Option<String>,
     pub concern: Option<String>,
+    /// Roles to leave out; lines of any of them do not match.
+    pub exclude_roles: Vec<String>,
     /// The kind of the innermost symbol a line sits in.
     pub symbol_kind: Option<String>,
 }
@@ -51,6 +53,11 @@ impl Filter {
                     values.push(value.clone());
                 }
             }
+        }
+        if !self.exclude_roles.is_empty() {
+            let marks = vec!["?"; self.exclude_roles.len()].join(", ");
+            conditions.push(format!("role NOT IN ({marks})"));
+            values.extend(self.exclude_roles.iter().cloned());
         }
         if conditions.is_empty() {
             ("true".to_owned(), values)

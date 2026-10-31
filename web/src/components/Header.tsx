@@ -1,5 +1,11 @@
 import type { Catalog } from '../generated/Answer';
-import { FILTER_DIMENSIONS, type FilterDimension, type Navigate, type UrlState } from '../urlState';
+import {
+  FILTER_DIMENSIONS,
+  hidesGenerated,
+  type FilterDimension,
+  type Navigate,
+  type UrlState,
+} from '../urlState';
 import { Link } from './Link';
 
 type HeaderProps = {
@@ -82,6 +88,21 @@ function FilterBar({ state, navigate, catalog }: Omit<HeaderProps, 'areaCount'>)
           </span>
         );
       })}
+      {hidesGenerated(state) && state.view === 'map' && (
+        <span className="chip" data-default-filter>
+          <span className="label">Hiding</span>
+          generated and vendored code
+          <button
+            className="ghost chip-remove"
+            aria-label="Show generated and vendored code"
+            onClick={() => {
+              navigate({ hideGenerated: false, selected: null });
+            }}
+          >
+            ×
+          </button>
+        </span>
+      )}
       <select
         aria-label="Add a filter"
         value=""

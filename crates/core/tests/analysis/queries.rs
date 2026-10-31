@@ -113,6 +113,47 @@ fn depth_aggregates_deeper_mass_into_the_deepest_drawn_ancestor() {
 }
 
 #[test]
+fn excluded_roles_leave_their_lines_out_and_unknown_ones_are_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    mixed_tree(dir.path());
+    write(
+        dir.path(),
+        "gen.rs",
+        &format!("// @generated\n{}", plain_functions("g", 20)),
+    );
+    let index = indexed(dir.path());
+    let total = |roles: &[&str]| {
+        tree_with(
+            &index,
+            Filter {
+                exclude_roles: roles.iter().map(|r| (*r).to_owned()).collect(),
+                ..Filter::default()
+            },
+            None,
+            None,
+        )
+        .total
+    };
+    let generated = tree_with(
+        &index,
+        Filter {
+            role: Some("generated".into()),
+            ..Filter::default()
+        },
+        None,
+        None,
+    )
+    .total;
+    assert!(generated > 0.0);
+    assert_eq!(total(&[]) - total(&["generated", "vendored"]), generated);
+    let unknown = Filter {
+        exclude_roles: vec!["nope".into()],
+        ..Filter::default()
+    };
+    assert!(answer(&index, &tree_query(unknown, None, None)).is_err());
+}
+
+#[test]
 fn filters_narrow_every_dimension() {
     let dir = tempfile::tempdir().unwrap();
     mixed_tree(dir.path());

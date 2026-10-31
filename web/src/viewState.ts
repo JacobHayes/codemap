@@ -8,6 +8,7 @@ export type ViewState =
   | 'treemap-drilled'
   | 'treemap-selected'
   | 'treemap-filtered'
+  | 'treemap-generated-shown'
   | 'treemap-colour'
   | 'treemap-ratio-colour'
   | 'treemap-tooltip'
@@ -24,6 +25,7 @@ export function viewStateOf(state: UrlState, facts: Facts): ViewState {
   if (facts.tooltip) return 'treemap-tooltip';
   if (state.color !== null) return facts.colourIsRatio ? 'treemap-ratio-colour' : 'treemap-colour';
   if (hasFilters(state)) return 'treemap-filtered';
+  if (!state.hideGenerated) return 'treemap-generated-shown';
   if (state.path !== '') return 'treemap-drilled';
   return state.selected === null ? 'treemap-root' : 'treemap-selected';
 }

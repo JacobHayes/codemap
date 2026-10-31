@@ -9,6 +9,7 @@ const stateArb: fc.Arbitrary<UrlState> = fc.record({
   role: fc.option(word, { nil: null }),
   concern: fc.option(word, { nil: null }),
   language: fc.option(word, { nil: null }),
+  hideGenerated: fc.boolean(),
   size: word,
   color: fc.option(word, { nil: null }),
   selected: fc.option(word, { nil: null }),
@@ -34,6 +35,11 @@ test('only values that differ from the defaults are written', () => {
     'role',
     'size',
   ]);
+});
+
+test('hiding generated code is the default and only showing it is written', () => {
+  expect(parseState('').hideGenerated).toBe(true);
+  expect(serializeState({ ...DEFAULT_STATE, hideGenerated: false })).toBe('?hide-generated=false');
 });
 
 test('slashes in a drill path stay readable', () => {

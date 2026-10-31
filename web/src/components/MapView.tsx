@@ -4,16 +4,23 @@ import type { Catalog, Tree } from '../generated/Answer';
 import type { Query } from '../generated/Query';
 import { exactAmount } from '../format';
 import { useAnswer } from '../useAnswer';
-import { hasFilters, type Navigate, type UrlState } from '../urlState';
+import {
+  HIDDEN_ROLES,
+  hasFilters,
+  hidesGenerated,
+  type Navigate,
+  type UrlState,
+} from '../urlState';
 import { viewStateOf } from '../viewState';
 import { Legend } from './Legend';
 import { Tooltip } from './Tooltip';
 
 /** The tree query for a state; unset fields are left out so the server's defaults apply. */
 function treeQuery(state: UrlState): Query {
-  const filter: Extract<Query, { kind: 'tree' }>['filter'] = {};
+  const filter: Extract<Query, { kind: 'tree' }>['filter'] = { excludeRoles: [] };
   if (state.path !== '') filter.path = state.path;
   if (state.role !== null) filter.role = state.role;
+  if (hidesGenerated(state)) filter.excludeRoles = [...HIDDEN_ROLES];
   if (state.concern !== null) filter.concern = state.concern;
   if (state.language !== null) filter.language = state.language;
   const query: Extract<Query, { kind: 'tree' }> = {
@@ -66,7 +73,13 @@ function Empty({ state, navigate }: Pick<MapProps, 'state' | 'navigate'>) {
       {hasFilters(state) && (
         <button
           onClick={() => {
-            navigate({ role: null, concern: null, language: null, selected: null });
+            navigate({
+              role: null,
+              concern: null,
+              language: null,
+              hideGenerated: true,
+              selected: null,
+            });
           }}
         >
           Clear filters
