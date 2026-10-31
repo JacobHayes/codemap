@@ -24,6 +24,13 @@ authoritative.
 - **Version control is jj**, colocated with git. Commit only your own files.
 - **Commit messages:** a short imperative title, and a body only when the why is not obvious.
 
+## Reviewing a change
+
+The author has already run `mise run check` on it, so don't rerun the check, full builds or
+code generation. Run any narrower command that helps confirm a suspicion: one test, a query, the
+binary on a fixture. Judge the change against the documents above; mechanical rules are the
+linters' job.
+
 ## Talking with people
 
 Plainly and on the merits: give the current state, recommend one option, and push back with the
