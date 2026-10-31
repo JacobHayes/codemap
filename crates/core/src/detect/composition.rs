@@ -1,18 +1,18 @@
 //! Mass and composition: files and directories whose share of a concern or role is far above the
 //! codebase's own share, weighted by mass.
 //!
+//! Every measure declares its population, the role whose lines the share is of: handling,
+//! comments and logging among production lines, assertions among test lines, test code and
+//! documentation against production lines. A subject with no lines in the population has no
+//! share, so a tests directory is not flagged for being tests.
+//!
 //! A subject is flagged when its share is at least [`SHARE_FACTOR`] times the codebase share and
 //! [`SHARE_MARGIN`] above it, and the lines beyond the codebase share (the excess) number at least
 //! [`MIN_EXCESS_LINES`] and a thousandth of the codebase. The excess, not the share, is the mass,
 //! so a tiny file with a high share cannot dominate. A directory whose excess is mostly one
-//! flagged descendant's is dropped in favour of the descendant. Roles that define their subject
-//! (a tests directory is all tests) are not flagged. A concern is compared within the role where
-//! it normally lives (handling, comments and logging in production code, assertions in tests),
-//! so a test directory is not flagged for asserting. Configuration is not examined: it is data.
+//! flagged descendant's is dropped in favour of the descendant.
 
 use codemap_lang::{Concern, Role};
-
-use crate::role::role_for_path;
 
 use super::corpus::Agg;
 use super::{Context, Detector, Finding, SubjectKind, count, percent};
@@ -22,68 +22,61 @@ const SHARE_FACTOR: f64 = 2.0;
 const SHARE_MARGIN: f64 = 0.10;
 const MIN_EXCESS_LINES: f64 = 50.0;
 const MIN_EXCESS_FRACTION: f64 = 0.001;
-/// Past this share a role is the subject's definition, not a finding about it.
-const DEFINING_SHARE: f64 = 0.95;
 /// A descendant that holds this much of an ancestor's excess replaces the ancestor.
 const DESCENDANT_EXPLAINS: f64 = 0.8;
 
 pub struct Composition;
 
-#[derive(Clone, Copy)]
-enum Dimension {
-    /// A concern's share of the lines of one role.
-    Concern(Concern, Role),
-    /// A role's share of all lines.
-    Role(Role),
-}
-
+/// A measure: the lines of a role (or of one concern within it) as a share of the lines of its
+/// population role. The population is the only place roles enter this detector; a subject with
+/// no lines in it has no measure.
 struct Category {
-    dimension: Dimension,
+    role: Role,
+    concern: Option<Concern>,
+    population: Role,
     /// How the lines are called in a sentence.
     words: &'static str,
 }
 
+const fn concern(concern: Concern, role: Role, words: &'static str) -> Category {
+    Category {
+        role,
+        concern: Some(concern),
+        population: role,
+        words,
+    }
+}
+
+const fn against_prod(role: Role, words: &'static str) -> Category {
+    Category {
+        role,
+        concern: None,
+        population: Role::Prod,
+        words,
+    }
+}
+
 const CATEGORIES: [Category; 6] = [
-    Category {
-        dimension: Dimension::Concern(Concern::Handler, Role::Prod),
-        words: "error handling",
-    },
-    Category {
-        dimension: Dimension::Concern(Concern::Comment, Role::Prod),
-        words: "comments",
-    },
-    Category {
-        dimension: Dimension::Concern(Concern::Assertion, Role::Test),
-        words: "assertions",
-    },
-    Category {
-        dimension: Dimension::Concern(Concern::Logging, Role::Prod),
-        words: "logging",
-    },
-    Category {
-        dimension: Dimension::Role(Role::Test),
-        words: "test code",
-    },
-    Category {
-        dimension: Dimension::Role(Role::Docs),
-        words: "documentation",
-    },
+    concern(Concern::Handler, Role::Prod, "error handling"),
+    concern(Concern::Comment, Role::Prod, "comments"),
+    concern(Concern::Assertion, Role::Test, "assertions"),
+    concern(Concern::Logging, Role::Prod, "logging"),
+    against_prod(Role::Test, "test code"),
+    against_prod(Role::Docs, "documentation"),
 ];
 
-impl Dimension {
-    /// The lines in the category and the lines it is a share of.
-    fn parts(self, agg: &Agg) -> (f64, f64) {
-        match self {
-            Self::Concern(concern, role) => (agg.cell(role, concern), agg.role(role)),
-            Self::Role(role) => (agg.role(role), agg.lines),
-        }
+impl Category {
+    /// The lines in the category and the lines of its population.
+    fn parts(&self, agg: &Agg) -> (f64, f64) {
+        let lines = self
+            .concern
+            .map_or_else(|| agg.role(self.role), |c| agg.cell(self.role, c));
+        (lines, agg.role(self.population))
     }
 
-    fn column_value(self) -> (&'static str, &'static str) {
-        match self {
-            Self::Concern(concern, _) => ("concern", concern.as_str()),
-            Self::Role(role) => ("role", role.as_str()),
-        }
+    fn column_value(&self) -> (&'static str, &'static str) {
+        self.concern
+            .map_or(("role", self.role.as_str()), |c| ("concern", c.as_str()))
     }
 }
 
@@ -113,7 +106,7 @@ impl Detector for Composition {
             return Ok(findings);
         }
         for category in &CATEGORIES {
-            let (category_total, stratum_total) = category.dimension.parts(&corpus.total);
+            let (category_total, stratum_total) = category.parts(&corpus.total);
             if stratum_total <= 0.0 {
                 continue;
             }
@@ -152,7 +145,7 @@ fn hit<'a>(
     is_dir: bool,
     agg: &'a Agg,
 ) -> Option<Hit<'a>> {
-    let (lines, of) = category.dimension.parts(agg);
+    let (lines, of) = category.parts(agg);
     if of <= 0.0 {
         return None;
     }
@@ -160,8 +153,7 @@ fn hit<'a>(
     let excess = lines - baseline * of;
     let flagged = share >= SHARE_FACTOR * baseline
         && share >= baseline + SHARE_MARGIN
-        && excess >= MIN_EXCESS_LINES.max(MIN_EXCESS_FRACTION * context.corpus.total.lines)
-        && !defines(context, category, path, is_dir, share);
+        && excess >= MIN_EXCESS_LINES.max(MIN_EXCESS_FRACTION * context.corpus.total.lines);
     flagged.then_some(Hit {
         path,
         is_dir,
@@ -170,20 +162,6 @@ fn hit<'a>(
         of,
         excess,
     })
-}
-
-/// A role that is the reason the subject exists says nothing about it: a tests directory is
-/// tests, a docs directory is docs.
-fn defines(context: &Context, category: &Category, path: &str, is_dir: bool, share: f64) -> bool {
-    let Dimension::Role(role) = category.dimension else {
-        return false;
-    };
-    let by_path = if is_dir {
-        role_for_path(&format!("{path}/_"), None, "") == role
-    } else {
-        context.corpus.file_roles.get(path) == Some(&role)
-    };
-    share >= DEFINING_SHARE || by_path
 }
 
 /// `inner` lies under `outer` and carries most of its excess.
@@ -201,17 +179,19 @@ fn finding(
     baseline: f64,
     hit: &Hit,
 ) -> Result<Finding, QueryError> {
-    let (category_lines, _) = category.dimension.parts(hit.agg);
+    let (lines, _) = category.parts(hit.agg);
     let what = if hit.is_dir { "directory" } else { "file" };
     let reason = format!(
-        "{} of the {} lines in {} are {}, against {} across the codebase.",
+        "{} has {} lines of {}, {} of its {} {} lines, against {} across the codebase.",
+        hit.path,
+        count(lines),
+        category.words,
         percent(hit.share),
         count(hit.of),
-        hit.path,
-        category.words,
+        category.population.as_str(),
         percent(baseline),
     );
-    let (column, value) = category.dimension.column_value();
+    let (column, value) = category.column_value();
     let evidence = if hit.is_dir {
         let prefix = format!("{}/", hit.path);
         let mut files: Vec<_> = context
@@ -219,7 +199,7 @@ fn finding(
             .files
             .iter()
             .filter(|(path, _)| path.starts_with(&prefix))
-            .map(|(path, agg)| (category.dimension.parts(agg).0, path))
+            .map(|(path, agg)| (category.parts(agg).0, path))
             .collect();
         files.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(b.1)));
         let mut runs = Vec::new();
@@ -245,7 +225,7 @@ fn finding(
         hit.excess,
         1.0 - baseline / hit.share,
     )
-    .measure("categoryLines", category_lines)
+    .measure("categoryLines", lines)
     .measure("lines", hit.of)
     .measure("share", hit.share)
     .measure("codebaseShare", baseline)

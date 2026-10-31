@@ -74,8 +74,6 @@ pub struct Corpus {
     /// Every directory above those files, root excluded.
     pub dirs: BTreeMap<String, Agg>,
     pub total: Agg,
-    /// The role each ranked file has as a whole.
-    pub file_roles: BTreeMap<String, Role>,
     pub functions: Vec<FunctionStat>,
 }
 
@@ -121,18 +119,6 @@ impl Corpus {
                 corpus.dirs.entry(dir.to_owned()).or_default().add(file);
             }
             corpus.total.add(file);
-        }
-        let mut roles = index
-            .store()
-            .connection()
-            .prepare("SELECT path, role FROM files")?;
-        for row in roles.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })? {
-            let (path, role) = row?;
-            if let (true, Some(role)) = (corpus.files.contains_key(&path), Role::parse(&role)) {
-                corpus.file_roles.insert(path, role);
-            }
         }
         corpus.functions = functions(index, &corpus.files)?;
         Ok(corpus)

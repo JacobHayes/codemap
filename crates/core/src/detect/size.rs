@@ -7,8 +7,8 @@
 //! floor, and the sample is big enough to have a distribution. The deviation is floored so a
 //! uniform codebase does not turn small differences into outliers.
 //!
-//! Files that are all configuration (JSON, TOML, YAML) are left out of both: they are mostly data
-//! other tools write, and configuration is not what a size finding is about.
+//! The population is production and test code: a file is measured only if it has such lines, so
+//! configuration, prose and the like are left out of both.
 //!
 //! A directory is a concentration when its share of the lines is at least [`CONCENTRATION_RATIO`]
 //! times its share of the files and the lines beyond its file share (the excess) are a real mass.
@@ -21,8 +21,6 @@ use super::corpus::{Agg, FunctionStat, ancestors};
 use super::{Context, Detector, Finding, SubjectKind, count};
 use crate::reader::QueryError;
 
-/// A file with this share of configuration lines is data.
-const CONFIG_SHARE: f64 = 0.95;
 const OUTLIER_Z: f64 = 3.5;
 /// Scales the median absolute deviation to a standard deviation for normal data.
 const MAD_SCALE: f64 = 0.6745;
@@ -122,13 +120,13 @@ impl Detector for Size {
     }
 }
 
-/// Files that are not almost entirely configuration.
+/// The population: files with production or test lines.
 fn code_files<'a>(context: &'a Context) -> impl Iterator<Item = (&'a String, &'a Agg)> {
     context
         .corpus
         .files
         .iter()
-        .filter(|(_, agg)| agg.role(Role::Config) < CONFIG_SHARE * agg.lines)
+        .filter(|(_, agg)| agg.role(Role::Prod) + agg.role(Role::Test) > 0.0)
 }
 
 fn files(context: &Context) -> Vec<Finding> {

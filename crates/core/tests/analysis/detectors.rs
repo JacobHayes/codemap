@@ -62,6 +62,36 @@ fn composition_stays_quiet_on_a_uniform_codebase_and_on_tiny_files() {
 }
 
 #[test]
+fn composition_measures_test_code_against_production_lines() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 20);
+    // All test code, no production lines: outside the population, so no share.
+    for i in 0..3 {
+        write(
+            dir.path(),
+            &format!("tests/t{i}.rs"),
+            &plain_functions(&format!("t{i}_"), 20),
+        );
+    }
+    let index = indexed(dir.path());
+    assert!(findings_of(&index, "composition").is_empty());
+
+    // A little production code with a lot of tests beside it.
+    write(dir.path(), "pkg/src/a.rs", &plain_functions("a", 2));
+    for i in 0..3 {
+        write(
+            dir.path(),
+            &format!("pkg/tests/t{i}.rs"),
+            &plain_functions(&format!("p{i}_"), 40),
+        );
+    }
+    let index = indexed(dir.path());
+    let found = findings_of(&index, "composition");
+    assert!(found.iter().any(|f| f.subject == "pkg"));
+    assert!(found.iter().all(|f| f.subject != "tests"));
+}
+
+#[test]
 fn size_fires_on_an_outlier_file_function_and_concentrated_directory() {
     let dir = tempfile::tempdir().unwrap();
     baseline(dir.path(), 30);
