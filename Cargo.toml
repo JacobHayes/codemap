@@ -38,6 +38,10 @@ tree-sitter = { version = "0.27.1", default-features = false, features = ["std"]
 tree-sitter-rust = "0.24.2"
 # The Python grammar and its tags query.
 tree-sitter-python = "0.25.0"
+# The JavaScript grammar and its tags query.
+tree-sitter-javascript = "0.25.0"
+# The TypeScript and TSX grammars and their tags query.
+tree-sitter-typescript = "0.23.2"
 # The index store: embedded columnar SQL, so every view is a GROUP BY. Bundled so the binary is self-contained.
 duckdb = { version = "~1.20000.1", default-features = false, features = ["bundled"] }
 # Content hashes for hash-and-diff and the build id: fast on large trees.
