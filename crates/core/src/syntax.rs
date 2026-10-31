@@ -7,6 +7,7 @@ use codemap_lang::{Concern, Kind, LANGUAGES, Language, Mark, Node, Role};
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator, Tree};
 
 use crate::facts::{LineFact, RefFact, SymbolFact, SymbolKind, split_lines, token_count};
+use crate::fingerprint::{Fingerprint, LINES_MIN, fingerprint};
 
 type Parsed = (Vec<LineFact>, Vec<SymbolFact>, Vec<RefFact>);
 
@@ -34,9 +35,11 @@ pub fn extract(language: &Language, text: &str, file_role: Role) -> Option<Parse
     let source = text.as_bytes();
     let lines = split_lines(text);
 
+    let kinds = kind_table(language);
     let mut grid = Grid::new(&lines, file_role);
-    grid.paint(language, &tree, source);
-    let (symbols, refs, line_symbols) = symbols_and_refs(language, &tree, source, lines.len());
+    grid.paint(language, &kinds, &tree, source);
+    let (symbols, refs, line_symbols) =
+        symbols_and_refs(language, &kinds, &tree, source, lines.len());
     let refs = refs
         .into_iter()
         .map(|(name, kind, row)| RefFact {
@@ -115,11 +118,10 @@ impl<'a> Grid<'a> {
         }
     }
 
-    fn paint(&mut self, language: &Language, tree: &Tree, source: &[u8]) {
-        let kinds = kind_table(language);
+    fn paint(&mut self, language: &Language, kinds: &[Option<Kind>], tree: &Tree, source: &[u8]) {
         let mut cursor = tree.walk();
         loop {
-            self.visit(language, &kinds, &cursor.node(), source);
+            self.visit(language, kinds, &cursor.node(), source);
             if cursor.goto_first_child() {
                 continue;
             }
@@ -246,6 +248,7 @@ type RawRef = (String, String, usize);
 /// Runs the tags query: definitions become symbols (outermost first), references stay by name.
 fn symbols_and_refs(
     language: &Language,
+    kinds: &[Option<Kind>],
     tree: &Tree,
     source: &[u8],
     line_count: usize,
@@ -312,11 +315,27 @@ fn symbols_and_refs(
             start_line: to_line(first),
             end_line: to_line(last),
             content_hash: blake3::hash(&source[start..end]).to_hex().to_string(),
+            fingerprint: fingerprint_of(kind, language, &node, source, kinds),
         });
         open.push(symbols.len() - 1);
         ranges.push((start, end));
     }
     (symbols, refs, line_symbols)
+}
+
+/// Functions and tests of at least [`LINES_MIN`] lines get fingerprints.
+fn fingerprint_of(
+    kind: SymbolKind,
+    language: &Language,
+    node: &Node,
+    source: &[u8],
+    kinds: &[Option<Kind>],
+) -> Option<Fingerprint> {
+    let (first, last) = rows(node);
+    let callable = matches!(kind, SymbolKind::Function | SymbolKind::Test);
+    (callable && to_line(last) - to_line(first) + 1 >= LINES_MIN)
+        .then(|| fingerprint(language, node, source, kinds))
+        .flatten()
 }
 
 fn definition_kind(

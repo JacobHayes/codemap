@@ -2,6 +2,7 @@
 
 use codemap_lang::{Concern, Role, language_for_path};
 
+use crate::fingerprint::Fingerprint;
 use crate::{role, syntax, text};
 
 /// What a symbol is.
@@ -48,6 +49,8 @@ pub struct SymbolFact {
     pub start_line: u32,
     pub end_line: u32,
     pub content_hash: String,
+    /// Functions and tests big enough to compare for duplication.
+    pub fingerprint: Option<Fingerprint>,
 }
 
 /// A name as written, before resolution.

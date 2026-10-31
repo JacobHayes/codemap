@@ -5,6 +5,7 @@ mod config;
 mod detect;
 mod event;
 mod facts;
+mod fingerprint;
 mod ignored;
 mod index;
 mod measure;
@@ -20,6 +21,7 @@ pub use config::{Acknowledgement, Config, ConfigError, Granularity, Rule, is_con
 pub use detect::{Area, DETECTORS, Detector, Evidence, Finding, SubjectKind};
 pub use event::Refresh;
 pub use facts::{FileFacts, LineFact, RefFact, SymbolFact, SymbolKind, extract};
+pub use fingerprint::{Fingerprint, MINHASH_LEN};
 pub use ignored::is_indexed;
 pub use index::{IndexError, IndexReport, index};
 pub use measure::{

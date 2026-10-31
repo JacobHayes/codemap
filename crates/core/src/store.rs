@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS lines (
     role VARCHAR, concern VARCHAR, symbol VARCHAR);
 CREATE TABLE IF NOT EXISTS symbols (
     id VARCHAR, path VARCHAR, name VARCHAR, kind VARCHAR, parent VARCHAR,
-    start_line UINTEGER, end_line UINTEGER, content_hash VARCHAR);
+    start_line UINTEGER, end_line UINTEGER, content_hash VARCHAR,
+    exact_hash UBIGINT, minhash BLOB);
 CREATE TABLE IF NOT EXISTS refs (
     path VARCHAR, line UINTEGER, name VARCHAR, kind VARCHAR, symbol VARCHAR);
 CREATE TABLE IF NOT EXISTS findings (
@@ -43,6 +44,8 @@ CREATE OR REPLACE VIEW line_facts AS
 
 /// Tables holding per-file rows, keyed by `path`.
 const FILE_TABLES: [&str; 4] = ["lines", "symbols", "refs", "files"];
+/// Tables the analyses and detectors rewrite from the whole index.
+const DERIVED_TABLES: [&str; 2] = ["findings", "areas"];
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -59,6 +62,11 @@ pub struct Store {
 /// A symbol id is unique across the index: the file path and the symbol's place in the file.
 fn symbol_id(path: &str, index: u32) -> String {
     format!("{path}#{index}")
+}
+
+/// A signature as the little-endian bytes of its hashes.
+fn minhash_bytes(minhash: &[u32]) -> Vec<u8> {
+    minhash.iter().flat_map(|hash| hash.to_le_bytes()).collect()
 }
 
 impl Store {
@@ -128,15 +136,15 @@ impl Store {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
-    /// Drops every per-file row, and recreates the derived tables so that a new build's columns
-    /// apply to an index an older build wrote.
+    /// Drops every table and recreates them, so that a new build's columns apply to an index an
+    /// older build wrote.
     pub fn clear(&self) -> Result<(), StoreError> {
-        for table in FILE_TABLES {
-            self.connection
-                .execute(&format!("DELETE FROM {table}"), [])?;
-        }
         self.connection
-            .execute_batch("DROP TABLE IF EXISTS findings; DROP TABLE IF EXISTS areas;")?;
+            .execute_batch("DROP VIEW IF EXISTS line_facts")?;
+        for table in FILE_TABLES.into_iter().chain(DERIVED_TABLES) {
+            self.connection
+                .execute_batch(&format!("DROP TABLE IF EXISTS {table}"))?;
+        }
         Ok(self.connection.execute_batch(SCHEMA)?)
     }
 
@@ -202,7 +210,12 @@ impl Store {
                     symbol.parent.map(|parent| symbol_id(path, parent)),
                     symbol.start_line,
                     symbol.end_line,
-                    symbol.content_hash
+                    symbol.content_hash,
+                    symbol.fingerprint.as_ref().map(|f| f.exact),
+                    symbol
+                        .fingerprint
+                        .as_ref()
+                        .map(|f| minhash_bytes(&f.minhash))
                 ])?;
             }
             for reference in &facts.refs {
