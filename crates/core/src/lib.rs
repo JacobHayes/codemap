@@ -12,6 +12,7 @@ mod role;
 mod store;
 mod syntax;
 mod text;
+mod worktree;
 
 pub use config::{Acknowledgement, Config, ConfigError, Granularity, Rule};
 pub use detect::{Area, DETECTORS, Detector, Evidence, Finding, SubjectKind};

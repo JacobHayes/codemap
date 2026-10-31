@@ -7,3 +7,4 @@
 mod common;
 mod incremental;
 mod languages;
+mod worktree;

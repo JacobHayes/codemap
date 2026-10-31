@@ -13,6 +13,7 @@ use crate::detect::{detect, rank};
 use crate::facts::{FileFacts, TOKEN_ENCODING, extract};
 use crate::reader::{Index, QueryError};
 use crate::store::{STATE_DIR, Store, StoreError};
+use crate::worktree::seed;
 
 /// Version-control directories are never part of the codebase, whatever the ignore files say.
 const SKIPPED_DIRS: [&str; 4] = [".git", ".jj", ".hg", ".svn"];
@@ -58,11 +59,13 @@ pub fn index(root: &Path) -> Result<IndexReport, IndexError> {
 }
 
 impl Index {
-    /// Opens the index under `root` for refreshing, creating it when missing.
+    /// Opens the index under `root` for refreshing, creating it when missing. A missing index in
+    /// a worktree starts as a copy of the main checkout's.
     ///
     /// # Errors
     /// Fails when the state directory or database cannot be created or opened.
     pub fn create(root: &Path) -> Result<Self, IndexError> {
+        seed(root);
         Ok(Self::new(Store::open(root)?, root))
     }
 
