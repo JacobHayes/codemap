@@ -239,8 +239,12 @@
   color: var(--chrome-muted);
 }
 .legend-none {
+  box-sizing: border-box;
   width: 12px;
   height: 10px;
+  border: 1px solid var(--color-frame);
+}
+.legend-steps {
   margin-left: auto;
 }
 

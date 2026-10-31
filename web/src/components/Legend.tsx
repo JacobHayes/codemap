@@ -27,13 +27,15 @@ export function Legend({ scale, catalog }: LegendProps) {
         <span>{number(scale.max)}</span>
       </div>
       <p className="legend-note">
-        {scale.spacing === 'log' ? 'Steps grow by multiples.' : 'Steps are equal.'}
         <span
           className="legend-none"
           style={{ background: neutralSwatch('leaf', theme).css }}
           aria-hidden="true"
         />
         {isRatio ? 'Zero or no value' : 'No value'}
+        <span className="legend-steps">
+          {scale.spacing === 'log' ? 'Steps grow by multiples.' : 'Steps are equal.'}
+        </span>
       </p>
     </figure>
   );
