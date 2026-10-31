@@ -54,6 +54,8 @@ ignore = { version = "0.4.34", default-features = false }
 rayon = { version = "1.12.0", default-features = false }
 # Token counts per line with the o200k encoding.
 bpe-openai = { version = "0.3.2", default-features = false }
+# The MCP server behind `codemap mcp`: protocol, stdio transport and tool schemas, so agents get one tool per query without a hand-written JSON-RPC layer. The official SDK, widely used and maintained.
+rmcp = { version = "3.8.0", default-features = false, features = ["server", "macros", "transport-io", "schemars"] }
 # Watches the served tree so `codemap serve` re-indexes what changes.
 notify = { version = "8.2.0", default-features = false, features = ["macos_fsevent"] }
 # Turns the change-notification channel into the stream behind server-sent events.
