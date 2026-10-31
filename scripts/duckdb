@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Fetches DuckDB's prebuilt static libraries into .duckdb/lib, where .cargo/config.toml points the
+# build. Linking them replaces compiling DuckDB's C++ (most of an hour cold on a CI runner).
+# The version must be the DuckDB the `duckdb` crate in Cargo.toml targets (libduckdb-sys
+# `.duckdb-release`); the sha256 pins each archive. Idempotent: does nothing when current.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+version=v2.0.0
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64) platform=linux-amd64 sha256=112d62c980f5447cd303a70b3dacbc09acd41ccb4ef6d154e8629f543a0f8568 ;;
+  Linux-aarch64 | Linux-arm64) platform=linux-arm64 sha256=8171b4842e68a85b2e82b342d3bf7b542a88fd6666e0c18438d7b459012494ee ;;
+  Darwin-x86_64) platform=osx-amd64 sha256=7e6101ddc8de73e8dcc66f790e658e07891165d026992b40ceba20e50b01f8ec ;;
+  Darwin-arm64) platform=osx-arm64 sha256=c3a571e6d4a0da97534c631df463ab13c07f8cf78049625f5df936b7beaab9ce ;;
+  *) echo "no prebuilt DuckDB for $(uname -sm)" >&2; exit 1 ;;
+esac
+
+stamp=".duckdb/stamp"
+want="$version $platform $sha256"
+[ "$(cat "$stamp" 2>/dev/null)" != "$want" ] || exit 0
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+archive="$tmp/static-libs.tar.gz"
+curl -fsSL --retry 3 -o "$archive" \
+  "https://github.com/duckdb/duckdb/releases/download/$version/duckdb-static-libs-$platform.tar.gz"
+echo "$sha256  $archive" > "$tmp/sha256"
+if command -v sha256sum >/dev/null; then sha256sum -c --status "$tmp/sha256"; else shasum -a 256 -c --status "$tmp/sha256"; fi
+
+rm -rf .duckdb
+mkdir -p .duckdb/lib
+tar -xzf "$archive" -C .duckdb/lib
+echo "$want" > "$stamp"

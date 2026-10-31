@@ -1,3 +1,6 @@
 # Every test run exports the wire types where the web app imports them from, never beside the crate.
 [env]
 TS_RS_EXPORT_DIR = { value = "web/src/generated", relative = true }
+# Link DuckDB's prebuilt static libraries, which `scripts/duckdb` fetches into `.duckdb/lib`.
+DUCKDB_STATIC = "1"
+DUCKDB_LIB_DIR = { value = ".duckdb/lib", relative = true }

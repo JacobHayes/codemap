@@ -23,6 +23,9 @@ tree-sitter.workspace = true
 codemap-lang.workspace = true
 thiserror.workspace = true
 
+[build-dependencies]
+cc.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true
 

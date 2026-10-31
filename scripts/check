@@ -39,6 +39,7 @@ step() {
 }
 
 web() { (cd web && "$@"); }
+step duckdb scripts/duckdb
 [ -d web/node_modules ] || step deps web npm ci
 if [ -z "$ci" ]; then
   step fix-rust cargo fmt

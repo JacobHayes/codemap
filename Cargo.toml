@@ -42,8 +42,10 @@ tree-sitter-python = "0.25.0"
 tree-sitter-javascript = "0.25.0"
 # The TypeScript and TSX grammars and their tags query.
 tree-sitter-typescript = "0.23.2"
-# The index store: embedded columnar SQL, so every view is a GROUP BY. Bundled so the binary is self-contained.
-duckdb = { version = "~1.20000.1", default-features = false, features = ["bundled"] }
+# The index store: embedded columnar SQL, so every view is a GROUP BY. Linked statically against DuckDB's prebuilt libraries (scripts/duckdb), because compiling its C++ takes most of an hour on a CI runner; the binary stays self-contained.
+duckdb = { version = "~1.20000.1", default-features = false }
+# Compiles the shim that registers DuckDB's core functions (crates/core/build.rs).
+cc = { version = "1.10.0", default-features = false }
 # Content hashes for hash-and-diff and the build id: fast on large trees.
 blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
 # Walks the tree honouring .gitignore and similar files.
