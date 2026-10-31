@@ -69,6 +69,16 @@ impl Index {
         Ok(Self::new(Store::open(root)?, root))
     }
 
+    /// Another handle on the same open database, with its own transactions. Opening the file a
+    /// second time would be a separate instance that never sees this one's writes, so every
+    /// reader of a running refresh comes from here.
+    ///
+    /// # Errors
+    /// Fails when the database cannot hand out another connection.
+    pub fn try_clone(&self) -> Result<Self, QueryError> {
+        Ok(Self::new(self.store.try_clone()?, &self.root))
+    }
+
     pub(crate) fn new(store: Store, root: &Path) -> Self {
         Self {
             store,

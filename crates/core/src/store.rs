@@ -94,6 +94,17 @@ impl Store {
         Ok(self.connection.execute_batch("COMMIT")?)
     }
 
+    pub fn rollback(&self) -> Result<(), StoreError> {
+        Ok(self.connection.execute_batch("ROLLBACK")?)
+    }
+
+    /// Another connection to the same database instance, with its own transactions.
+    pub fn try_clone(&self) -> Result<Self, StoreError> {
+        Ok(Self {
+            connection: self.connection.try_clone()?,
+        })
+    }
+
     pub fn meta(&self, key: &str) -> Result<Option<String>, StoreError> {
         let mut statement = self
             .connection
@@ -218,5 +229,33 @@ impl Store {
                 })?)
         };
         Ok((count("files")?, count("lines")?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_clone_reads_the_previous_state_until_the_writer_commits() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let writer = Store::open(dir.path()).expect("opens");
+        let reader = writer.try_clone().expect("clones");
+        let files = |store: &Store| store.totals().expect("counts").0;
+        writer
+            .connection()
+            .execute_batch("INSERT INTO files VALUES ('a', 'h', 1, 'text', 'docs', false)")
+            .expect("seeds");
+
+        writer.begin().expect("begins");
+        writer
+            .connection()
+            .execute_batch("INSERT INTO files VALUES ('b', 'h', 1, 'text', 'docs', false)")
+            .expect("writes");
+        assert_eq!(files(&writer), 2);
+        assert_eq!(files(&reader), 1);
+
+        writer.commit().expect("commits");
+        assert_eq!(files(&reader), 2);
     }
 }

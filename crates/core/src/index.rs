@@ -1,6 +1,6 @@
 //! Discover, hash, diff, extract in parallel, and write what changed.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -49,92 +49,140 @@ struct Scanned {
     facts: Option<FileFacts>,
 }
 
-/// Brings the index under `root` up to date with the tree.
+/// Brings the index under `root` up to date with the tree, creating it when missing.
 ///
 /// # Errors
 /// Fails when the tree cannot be walked or read, or the index cannot be written.
 pub fn index(root: &Path) -> Result<IndexReport, IndexError> {
-    let store = Store::open(root)?;
-    let config = Config::load(root)?;
-    let roles = RoleOverrides::new(&config.roles)?;
-    // Role overrides change what extraction stores, so a change to them re-extracts everything.
-    let roles_key = format!("{:?}", config.roles);
-    let build_id = build_id()?;
-    let stale = store.meta("build_id")?.as_deref() != Some(build_id.as_str())
-        || store.meta("tokenizer")?.as_deref() != Some(TOKEN_ENCODING)
-        || store.meta("roles")?.as_deref() != Some(roles_key.as_str());
-    let stored = if stale {
-        BTreeMap::new()
-    } else {
-        store.file_hashes()?
-    };
-
-    let paths = discover(root)?;
-    let scanned = paths
-        .par_iter()
-        .map(|path| scan(root, path, stored.get(path), &roles))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let present: std::collections::BTreeSet<&str> = paths.iter().map(String::as_str).collect();
-    let mut stale_paths: Vec<&str> = stored
-        .keys()
-        .map(String::as_str)
-        .filter(|path| !present.contains(path))
-        .collect();
-    stale_paths.extend(
-        scanned
-            .iter()
-            .filter(|file| file.facts.is_some())
-            .map(|file| file.path.as_str()),
-    );
-    let extracted = scanned.iter().filter(|file| file.facts.is_some());
-
-    store.begin()?;
-    if stale {
-        store.clear()?;
-    } else {
-        store.delete_files(&stale_paths)?;
-    }
-    store.insert(extracted.clone().filter_map(|file| {
-        file.facts
-            .as_ref()
-            .map(|facts| (file.path.as_str(), file.hash.as_str(), facts))
-    }))?;
-    store.set_meta("build_id", &build_id)?;
-    store.set_meta("tokenizer", TOKEN_ENCODING)?;
-    store.set_meta("roles", &roles_key)?;
-    store.commit()?;
-
-    let (file_count, line_count) = store.totals()?;
-    analyse(store, root, &config, &build_id)?;
-    Ok(IndexReport {
-        file_count,
-        line_count,
-        extracted_count: extracted.count() as u64,
-    })
+    Index::create(root)?.refresh()
 }
 
-/// Runs the detectors and ranking over the whole index, unless nothing they read has changed.
-fn analyse(store: Store, root: &Path, config: &Config, build_id: &str) -> Result<(), IndexError> {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(build_id.as_bytes());
-    hasher.update(config.text.as_bytes());
-    for (path, hash) in store.file_hashes()? {
-        hasher.update(path.as_bytes());
-        hasher.update(hash.as_bytes());
+impl Index {
+    /// Opens the index under `root` for refreshing, creating it when missing.
+    ///
+    /// # Errors
+    /// Fails when the state directory or database cannot be created or opened.
+    pub fn create(root: &Path) -> Result<Self, IndexError> {
+        Ok(Self::new(Store::open(root)?, root))
     }
-    let key = hasher.finalize().to_hex().to_string();
-    if store.meta("analysis")?.as_deref() == Some(key.as_str()) {
-        return Ok(());
+
+    /// Brings the index up to date with the tree: hash-and-diff, extract what changed, rerun the
+    /// analyses.
+    ///
+    /// Everything it writes lands in one transaction. `DuckDB` gives every other connection to the
+    /// same database (see [`Index::try_clone`]) snapshot isolation, so a reader sees the whole
+    /// previous state until the commit and the whole new state after it, never a half-written
+    /// index, and is never blocked. Only one refresh may run at a time.
+    ///
+    /// # Errors
+    /// Fails when the tree cannot be walked or read, or the index cannot be written; the index
+    /// then keeps its previous state.
+    pub fn refresh(&self) -> Result<IndexReport, IndexError> {
+        let store = self.store();
+        let config = Config::load(self.root())?;
+        let roles = RoleOverrides::new(&config.roles)?;
+        // Role overrides change what extraction stores, so a change to them re-extracts everything.
+        let roles_key = format!("{:?}", config.roles);
+        let build_id = build_id()?;
+        let stale = store.meta("build_id")?.as_deref() != Some(build_id.as_str())
+            || store.meta("tokenizer")?.as_deref() != Some(TOKEN_ENCODING)
+            || store.meta("roles")?.as_deref() != Some(roles_key.as_str());
+        let stored = if stale {
+            BTreeMap::new()
+        } else {
+            store.file_hashes()?
+        };
+
+        let root = self.root();
+        let paths = discover(root)?;
+        let scanned = paths
+            .par_iter()
+            .map(|path| scan(root, path, stored.get(path), &roles))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let present: BTreeSet<&str> = paths.iter().map(String::as_str).collect();
+        let mut stale_paths: Vec<&str> = stored
+            .keys()
+            .map(String::as_str)
+            .filter(|path| !present.contains(path))
+            .collect();
+        stale_paths.extend(
+            scanned
+                .iter()
+                .filter(|file| file.facts.is_some())
+                .map(|file| file.path.as_str()),
+        );
+
+        store.begin()?;
+        let written = self.write(
+            &scanned,
+            stale,
+            &stale_paths,
+            &config,
+            &build_id,
+            &roles_key,
+        );
+        match written {
+            Ok(()) => store.commit()?,
+            Err(error) => {
+                store.rollback()?;
+                return Err(error);
+            }
+        }
+        let (file_count, line_count) = store.totals()?;
+        Ok(IndexReport {
+            file_count,
+            line_count,
+            extracted_count: scanned.iter().filter(|file| file.facts.is_some()).count() as u64,
+        })
     }
-    let index = Index::new(store, root);
-    let mut findings = detect(&index, config)?;
-    let areas = rank(&mut findings, config);
-    index.store().begin()?;
-    index.save_analysis(&findings, &areas)?;
-    index.store().set_meta("analysis", &key)?;
-    index.store().commit()?;
-    Ok(())
+
+    /// The writes of one refresh, inside the caller's transaction.
+    fn write(
+        &self,
+        scanned: &[Scanned],
+        stale: bool,
+        stale_paths: &[&str],
+        config: &Config,
+        build_id: &str,
+        roles_key: &str,
+    ) -> Result<(), IndexError> {
+        let store = self.store();
+        if stale {
+            store.clear()?;
+        } else {
+            store.delete_files(stale_paths)?;
+        }
+        store.insert(scanned.iter().filter_map(|file| {
+            file.facts
+                .as_ref()
+                .map(|facts| (file.path.as_str(), file.hash.as_str(), facts))
+        }))?;
+        store.set_meta("build_id", build_id)?;
+        store.set_meta("tokenizer", TOKEN_ENCODING)?;
+        store.set_meta("roles", roles_key)?;
+        self.analyse(config, build_id)
+    }
+
+    /// Runs the detectors and ranking over the whole index, unless nothing they read has changed.
+    fn analyse(&self, config: &Config, build_id: &str) -> Result<(), IndexError> {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(build_id.as_bytes());
+        hasher.update(config.text.as_bytes());
+        for (path, hash) in self.store().file_hashes()? {
+            hasher.update(path.as_bytes());
+            hasher.update(hash.as_bytes());
+        }
+        let key = hasher.finalize().to_hex().to_string();
+        if self.store().meta("analysis")?.as_deref() == Some(key.as_str()) {
+            return Ok(());
+        }
+        let mut findings = detect(self, config)?;
+        let areas = rank(&mut findings, config);
+        self.save_analysis(&findings, &areas)?;
+        self.store().set_meta("analysis", &key)?;
+        Ok(())
+    }
 }
 
 /// Hashes the running executable: any rebuild of codemap changes what extraction may produce.
