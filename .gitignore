@@ -6,3 +6,4 @@ dist/
 .codemap/index.duckdb*
 web/test-results
 /.duckdb
+web/playwright-report

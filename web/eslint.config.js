@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint';
 const hexColour = String.raw`^#[0-9a-fA-F]{3,8}$`;
 
 export default tseslint.config(
-  { ignores: ['dist', 'src/generated'] },
+  { ignores: ['dist', 'src/generated', 'test-results', 'playwright-report'] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   {
