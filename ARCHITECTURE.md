@@ -90,9 +90,14 @@ changed files after a short quiet period, and tells open pages to refresh.
 
 ## Data model
 
-The index is one DuckDB file at `.codemap/index.duckdb` in the project root, holding the facts
-and the inference cache, so a project is self-contained. codemap writes a `.gitignore` inside
-`.codemap/` so the directory is never committed.
+Everything codemap keeps for a project lives in `.codemap/` at its root: `config.toml`
+(committed) and `index.duckdb` (the facts and the inference cache, never committed; codemap
+writes a `.gitignore` beside it that ignores everything but the config). A project is
+self-contained.
+
+**Worktrees start warm.** When a git worktree or jj workspace has no index yet, codemap copies
+the main checkout's index if there is one; the next hash-and-diff brings it up to date. This is
+the only thing codemap asks version control: where the main checkout is.
 
 ```mermaid
 erDiagram
@@ -128,7 +133,7 @@ accepted until a view shows it matters.
 **Measures are computed when asked.** Only base measures (lines, tokens, nodes, and what
 analyses write) are stored. A measure in a query is a sum of a base measure under a filter, or a
 ratio of two such sums, such as handling lines over core lines. The catalog names the common
-ones, `codemap.toml` can name more, and any query (from the CLI, an agent or the UI) can pass
+ones, the project config can name more, and any query (from the CLI, an agent or the UI) can pass
 one inline.
 
 ## Extension points
@@ -255,7 +260,7 @@ breadcrumbs, tables, panels); views that draw many marks are framework-free canv
 
 ## Configuration
 
-- **`codemap.toml`** at the root holds project facts: role overrides by glob, named measures,
+- **`.codemap/config.toml`** holds project facts: role overrides by glob, named measures,
   rules, acknowledgements and model choices. It is optional and committed with the project.
 - **Flags** cover only the invocation: what to show, where to listen.
 - **Environment** holds only API keys.
