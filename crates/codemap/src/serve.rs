@@ -138,7 +138,11 @@ async fn query(State(served): State<Arc<Served>>, Json(query): Json<Query>) -> R
                 QueryError::UnknownMeasure(_)
                 | QueryError::SizeIsRatio
                 | QueryError::UnknownArea(_)
-                | QueryError::UnknownValue { .. } => StatusCode::BAD_REQUEST,
+                | QueryError::UnknownValue { .. }
+                | QueryError::OutsideRoot(_)
+                | QueryError::UnknownFile(_)
+                | QueryError::NotText(_)
+                | QueryError::BadRange => StatusCode::BAD_REQUEST,
                 _ => StatusCode::INTERNAL_SERVER_ERROR,
             };
             (status, error.to_string()).into_response()

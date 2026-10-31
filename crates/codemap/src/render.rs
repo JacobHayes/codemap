@@ -4,7 +4,8 @@
 use std::fmt::Write as _;
 
 use codemap_core::{
-    Answer, Area, AreaDetail, AreaList, Catalog, Finding, Overview, Share, Tree, TreeNode,
+    Answer, Area, AreaDetail, AreaList, Catalog, Finding, Overview, SOURCE_LINES_MAX, Share,
+    Source, Tree, TreeNode, Xtab,
 };
 
 /// Children listed under one tile before the rest are summarised.
@@ -85,6 +86,8 @@ pub fn render(answer: &Answer) -> String {
     match answer {
         Answer::Overview(overview) => overview_text(overview),
         Answer::Tree(tree) => tree_text(tree),
+        Answer::Xtab(xtab) => xtab_text(xtab),
+        Answer::Source(source) => source_text(source),
         Answer::Areas(list) => areas_text(list),
         Answer::Area(detail) => area_text(detail),
         Answer::Catalog(catalog) => catalog_text(catalog),
@@ -145,6 +148,103 @@ fn overview_text(overview: &Overview) -> String {
     out.push('\n');
     out.push_str(&overview.semantic);
     out.push('\n');
+    out
+}
+
+/// Cross-tabs list their largest rows first; a cell with nothing in it shows a dot.
+fn xtab_text(xtab: &Xtab) -> String {
+    let measure = if xtab.measure.measure == xtab.measure.unit {
+        String::new()
+    } else {
+        format!(" ({})", xtab.measure.measure)
+    };
+    let mut out = format!(
+        "{} {}{measure}, {} rows by {} columns\n",
+        number(xtab.total),
+        xtab.measure.unit,
+        xtab.rows.len(),
+        xtab.cols.len(),
+    );
+    let mut headers = vec![(format!("{:?}", xtab.row_axis).to_lowercase(), Align::Left)];
+    headers.extend(xtab.cols.iter().map(|c| (c.name.clone(), Align::Right)));
+    headers.push(("total".to_owned(), Align::Right));
+    let mut grid: Vec<Vec<String>> = xtab
+        .rows
+        .iter()
+        .map(|row| {
+            let mut cells = vec![row.name.clone()];
+            cells.extend(xtab.cols.iter().map(|_| "·".to_owned()));
+            cells.push(number(row.total));
+            cells
+        })
+        .collect();
+    for cell in &xtab.cells {
+        grid[cell.row as usize][cell.col as usize + 1] = number(cell.value);
+    }
+    let mut margin = vec!["total".to_owned()];
+    margin.extend(xtab.cols.iter().map(|c| number(c.total)));
+    margin.push(number(xtab.total));
+    grid.push(margin);
+    let headers: Vec<(&str, Align)> = headers.iter().map(|(n, a)| (n.as_str(), *a)).collect();
+    out.push('\n');
+    out.push_str(&table(&headers, &grid));
+    out
+}
+
+/// The file's lines, numbered, each with its role and concern, then the findings that touch them.
+fn source_text(source: &Source) -> String {
+    let language = source.language.as_deref().unwrap_or("no grammar");
+    let mut out = format!(
+        "{} ({language}): lines {}-{} of {}, {} findings touch them\n\n",
+        source.path,
+        source.start_line,
+        source.end_line,
+        source.line_count,
+        source.findings.len(),
+    );
+    let width = source.end_line.to_string().len();
+    for line in &source.lines {
+        let _ = writeln!(
+            out,
+            "{:>width$}  {:<9} {:<10} {}",
+            line.number, line.role, line.concern, line.text
+        )
+        .ok();
+    }
+    if source.more > 0 {
+        let _ = writeln!(
+            out,
+            "... {} more lines; ask for them with --lines {}-{}",
+            source.more,
+            source.end_line + 1,
+            source.end_line + source.more.min(SOURCE_LINES_MAX),
+        )
+        .ok();
+    }
+    if !source.findings.is_empty() {
+        let rows: Vec<Vec<String>> = source
+            .findings
+            .iter()
+            .map(|f| {
+                vec![
+                    format!("{}-{}", f.start_line, f.end_line),
+                    f.detector.clone(),
+                    f.area.clone(),
+                    f.reason.clone(),
+                ]
+            })
+            .collect();
+        out.push('\n');
+        out.push_str(&table(
+            &[
+                ("lines", Align::Left),
+                ("detector", Align::Left),
+                ("area", Align::Left),
+                ("reason", Align::Left),
+            ],
+            &rows,
+        ));
+    }
     out
 }
 

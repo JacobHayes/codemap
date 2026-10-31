@@ -88,12 +88,21 @@ impl Index {
 
     /// The findings of one area, biggest first.
     pub(crate) fn findings_of(&self, area: &str) -> Result<Vec<Finding>, QueryError> {
-        let mut statement = self.store().connection().prepare(
+        self.findings_where("area = ?", &[area])
+    }
+
+    /// Every finding, biggest first.
+    pub(crate) fn all_findings(&self) -> Result<Vec<Finding>, QueryError> {
+        self.findings_where("true", &[])
+    }
+
+    fn findings_where(&self, condition: &str, bound: &[&str]) -> Result<Vec<Finding>, QueryError> {
+        let mut statement = self.store().connection().prepare(&format!(
             "SELECT detector, subject, subject_kind, area, reason, mass_lines, confidence,
                     measures, labels, facts, evidence, acknowledged
-             FROM findings WHERE area = ? ORDER BY mass_lines DESC, detector, subject",
-        )?;
-        let rows = statement.query_map([area], |row| {
+             FROM findings WHERE {condition} ORDER BY mass_lines DESC, detector, subject"
+        ))?;
+        let rows = statement.query_map(duckdb::params_from_iter(bound.iter()), |row| {
             Ok((
                 Finding {
                     detector: row.get(0)?,

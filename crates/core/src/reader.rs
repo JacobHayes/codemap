@@ -23,7 +23,7 @@ pub enum QueryError {
     Config(#[from] ConfigError),
     #[error("unknown measure {0:?}: see the catalog")]
     UnknownMeasure(String),
-    #[error("the size of a tile must be a sum, not a ratio")]
+    #[error("the size of a tile or cell must be a sum, not a ratio")]
     SizeIsRatio,
     #[error("no area for {0:?}")]
     UnknownArea(String),
@@ -31,6 +31,21 @@ pub enum QueryError {
     UnknownValue {
         dimension: &'static str,
         value: String,
+    },
+    #[error("{0:?} is not a path inside the root")]
+    OutsideRoot(String),
+    #[error("{0:?} is not an indexed file")]
+    UnknownFile(String),
+    #[error("{0:?} is binary, so it has no lines to show")]
+    NotText(String),
+    #[error("{0:?} changed since it was indexed: index again")]
+    Stale(String),
+    #[error("a line range starts at 1 and ends at or after its start")]
+    BadRange,
+    #[error("cannot read {path}: {source}")]
+    Unreadable {
+        path: String,
+        source: std::io::Error,
     },
     #[error("cannot encode a finding: {0}")]
     Encode(#[from] serde_json::Error),

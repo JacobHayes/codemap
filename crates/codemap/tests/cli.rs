@@ -101,3 +101,40 @@ fn an_unknown_subject_fails_with_a_message_on_stderr() {
     assert!(output.stdout.is_empty());
     assert!(!output.stderr.is_empty());
 }
+
+#[test]
+fn xtab_and_source_answer_in_text_and_json() {
+    let dir = tree();
+    let root = dir.path();
+
+    let xtab = json(&run(
+        root,
+        &["xtab", "--rows", "path", "--cols", "concern", "--json"],
+    ));
+    assert_eq!(xtab["kind"], "xtab");
+    assert_eq!(xtab["rows"][0]["name"], "huge.py");
+    let text =
+        String::from_utf8(run(root, &["xtab", "--rows", "role", "--cols", "concern"]).stdout)
+            .expect("utf-8");
+    assert!(
+        text.lines()
+            .last()
+            .expect("a margin row")
+            .starts_with("total")
+    );
+
+    let source = json(&run(
+        root,
+        &["source", "huge.py", "--lines", "2-3", "--json"],
+    ));
+    assert_eq!(source["kind"], "source");
+    assert_eq!(source["lines"].as_array().expect("lines").len(), 2);
+    assert_eq!(source["lines"][0]["number"], 2);
+    let text =
+        String::from_utf8(run(root, &["source", "huge.py", "--lines", "1"]).stdout).expect("utf-8");
+    assert!(text.contains("def g0(a):"));
+
+    let outside = run(root, &["source", "../etc/passwd"]);
+    assert!(!outside.status.success());
+    assert!(outside.stdout.is_empty());
+}

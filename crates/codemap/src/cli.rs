@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use codemap_core::{Answer, Envelope, Filter, Hierarchy, Index, MeasureRef, Query, answer, index};
+use clap::{Args, Parser, Subcommand};
+use codemap_core::{Answer, Envelope, Index, Query, answer, index};
 
+use crate::args::{AreaArgs, AreasArgs, SourceArgs, TreeArgs, XtabArgs};
 use crate::{render, serve};
 
 #[derive(Debug, Parser)]
@@ -27,12 +28,6 @@ struct Output {
     json: bool,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum By {
-    Path,
-    Symbol,
-}
-
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Bring the index under PATH up to date with the tree.
@@ -47,50 +42,36 @@ enum Command {
     Tree {
         #[command(flatten)]
         output: Output,
-        /// Group by directory and file, or by file and symbol.
-        #[arg(long, value_enum, default_value = "path")]
-        by: By,
-        /// Size measure, a sum from the catalog.
-        #[arg(long, default_value = "lines")]
-        size: String,
-        /// Colour measure from the catalog.
-        #[arg(long)]
-        color: Option<String>,
-        /// Levels below the root; deeper mass aggregates upward.
-        #[arg(long)]
-        depth: Option<u32>,
-        /// Only this file or directory.
-        #[arg(long)]
-        path: Option<String>,
-        #[arg(long)]
-        language: Option<String>,
-        #[arg(long)]
-        role: Option<String>,
-        #[arg(long)]
-        concern: Option<String>,
-        #[arg(long)]
-        symbol_kind: Option<String>,
+        #[command(flatten)]
+        args: TreeArgs,
+    },
+    /// Two dimensions crossed, with one measure in each cell.
+    Xtab {
+        #[command(flatten)]
+        output: Output,
+        #[command(flatten)]
+        args: XtabArgs,
+    },
+    /// One file's lines with role, concern and the findings that touch them.
+    Source {
+        #[command(flatten)]
+        output: Output,
+        #[command(flatten)]
+        args: SourceArgs,
     },
     /// Ranked areas worth a closer look.
     Areas {
         #[command(flatten)]
         output: Output,
-        /// How many to list.
-        #[arg(long, default_value_t = 20)]
-        top: u32,
-        /// Only areas at or under this path.
-        #[arg(long)]
-        path: Option<String>,
-        /// Only areas this detector found something in.
-        #[arg(long)]
-        detector: Option<String>,
+        #[command(flatten)]
+        args: AreasArgs,
     },
     /// One area: its findings, evidence and related areas.
     Area {
         #[command(flatten)]
         output: Output,
-        /// A file or directory path, as `areas` prints it.
-        subject: String,
+        #[command(flatten)]
+        args: AreaArgs,
     },
     /// Dimensions, measures and detectors available.
     Catalog(Output),
@@ -139,51 +120,11 @@ fn dispatch(command: Command) -> Result<(), Failure> {
         Command::Serve { root, port } => Ok(serve::run(&root, port)?),
         Command::Overview(output) => ask(&output, &Query::Overview),
         Command::Catalog(output) => ask(&output, &Query::Catalog),
-        Command::Area { output, subject } => ask(&output, &Query::Area { subject }),
-        Command::Areas {
-            output,
-            top,
-            path,
-            detector,
-        } => ask(
-            &output,
-            &Query::Areas {
-                top: Some(top),
-                path,
-                detector,
-            },
-        ),
-        Command::Tree {
-            output,
-            by,
-            size,
-            color,
-            depth,
-            path,
-            language,
-            role,
-            concern,
-            symbol_kind,
-        } => {
-            let query = Query::Tree {
-                hierarchy: match by {
-                    By::Path => Hierarchy::Path,
-                    By::Symbol => Hierarchy::Symbol,
-                },
-                size: Some(MeasureRef::Named(size)),
-                color: color.map(MeasureRef::Named),
-                filter: Filter {
-                    path,
-                    language,
-                    role,
-                    concern,
-                    symbol_kind,
-                    ..Filter::default()
-                },
-                depth,
-            };
-            ask(&output, &query)
-        }
+        Command::Area { output, args } => ask(&output, &args.query()),
+        Command::Areas { output, args } => ask(&output, &args.query()),
+        Command::Tree { output, args } => ask(&output, &args.query()),
+        Command::Xtab { output, args } => ask(&output, &args.query()),
+        Command::Source { output, args } => ask(&output, &args.query()?),
     }
 }
 

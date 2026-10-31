@@ -48,6 +48,8 @@ impl Filter {
                 // Files without a grammar have no language: "other" names them.
                 if column == "language" && value == OTHER_LANGUAGE {
                     conditions.push("language IS NULL".to_owned());
+                } else if column == "symbol_kind" && value == NO_SYMBOL {
+                    conditions.push("symbol_kind IS NULL".to_owned());
                 } else {
                     conditions.push(format!("{column} = ?"));
                     values.push(value.clone());
@@ -69,6 +71,9 @@ impl Filter {
 
 /// How files with no grammar are named as a language.
 pub const OTHER_LANGUAGE: &str = "other";
+
+/// How lines outside any symbol are named as a symbol kind.
+pub const NO_SYMBOL: &str = "none";
 
 /// What is counted per line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

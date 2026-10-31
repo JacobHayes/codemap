@@ -3,19 +3,23 @@
 
 mod overview;
 mod scale;
+mod source;
 mod tree;
+mod xtab;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::detect::{Area, DETECTORS, Finding};
-use crate::measure::{self, Filter, MeasureDef, MeasureRef};
+use crate::measure::{self, Filter, Measure, MeasureDef, MeasureRef};
 use crate::reader::{Index, QueryError};
 use codemap_lang::{Concern, LANGUAGES, Role};
 
 pub use overview::{AreaCounts, DetectorCount, Overview, Share, Totals};
 pub use scale::{SCALE_STEPS, Scale, Spacing};
+pub use source::{SOURCE_LINES_MAX, Source, SourceFinding, SourceLine};
 pub use tree::{DEPTH_DEFAULT, Hierarchy, SizeInfo, Tree, TreeNode};
+pub use xtab::{Axis, PATH_DEPTH_DEFAULT, Xtab, XtabCell, XtabHeader};
 
 /// The schema name and version every serialized answer carries.
 pub const SCHEMA: &str = "codemap.answer/v1";
@@ -50,6 +54,19 @@ pub enum Query {
         #[serde(default)]
         depth: Option<u32>,
     },
+    /// Two dimensions crossed, one measure per cell, under filters.
+    Xtab {
+        rows: Axis,
+        cols: Axis,
+        /// A sum; `lines` when absent.
+        #[serde(default)]
+        measure: Option<MeasureRef>,
+        #[serde(default)]
+        filter: Filter,
+        /// Path components kept on a path axis. [`PATH_DEPTH_DEFAULT`] when absent.
+        #[serde(default)]
+        path_depth: Option<u32>,
+    },
     /// Ranked areas, best first.
     Areas {
         /// How many to list; all when absent.
@@ -66,6 +83,17 @@ pub enum Query {
     Area {
         /// A file or directory path; a `path::function` subject names its file.
         subject: String,
+    },
+    /// One file's lines with their role and concern, and the finding ranges that touch them.
+    Source {
+        /// Relative to the root.
+        path: String,
+        /// First line to return, 1-based; the first line when absent.
+        #[serde(default)]
+        start_line: Option<u32>,
+        /// Last line to return, inclusive; the last line when absent.
+        #[serde(default)]
+        end_line: Option<u32>,
     },
     /// Dimensions, measures and detectors available.
     Catalog,
@@ -128,8 +156,10 @@ pub struct Catalog {
 pub enum Answer {
     Overview(Overview),
     Tree(Tree),
+    Xtab(Xtab),
     Areas(AreaList),
     Area(AreaDetail),
+    Source(Source),
     Catalog(Catalog),
 }
 
@@ -164,37 +194,26 @@ pub fn answer(index: &Index, query: &Query) -> Result<Answer, QueryError> {
             color,
             filter,
             depth,
-        } => {
-            let size = size
-                .clone()
-                .unwrap_or_else(|| MeasureRef::Named("lines".to_owned()));
-            validate(filter)?;
-            let size_measure = tree::resolve(&size)?;
-            let color = color
-                .as_ref()
-                .map(|reference| {
-                    Ok::<_, QueryError>((tree::resolve(reference)?, measure::label(reference)))
-                })
-                .transpose()?;
-            let args = tree::Args {
-                hierarchy: *hierarchy,
-                size: &size_measure,
-                size_label: measure::label(&size),
-                color: color.as_ref().map(|(m, label)| (m, label.clone())),
-                filter,
-                depth: depth.unwrap_or(DEPTH_DEFAULT),
-            };
-            for measure in [Some(&size_measure), color.as_ref().map(|(m, _)| m)]
-                .into_iter()
-                .flatten()
-            {
-                measure
-                    .terms()
-                    .iter()
-                    .try_for_each(|term| validate(&term.filter))?;
-            }
-            tree::tree(index, &args).map(Answer::Tree)
-        }
+        } => tree_answer(
+            index,
+            *hierarchy,
+            size.as_ref(),
+            color.as_ref(),
+            filter,
+            *depth,
+        ),
+        Query::Xtab {
+            rows,
+            cols,
+            measure,
+            filter,
+            path_depth,
+        } => xtab_answer(index, (*rows, *cols), measure.as_ref(), filter, *path_depth),
+        Query::Source {
+            path,
+            start_line,
+            end_line,
+        } => source::source(index, path, *start_line, *end_line).map(Answer::Source),
         Query::Areas {
             top,
             path,
@@ -203,6 +222,71 @@ pub fn answer(index: &Index, query: &Query) -> Result<Answer, QueryError> {
         Query::Area { subject } => area(index, subject).map(Answer::Area),
         Query::Catalog => Ok(Answer::Catalog(catalog())),
     }
+}
+
+fn tree_answer(
+    index: &Index,
+    hierarchy: Hierarchy,
+    size: Option<&MeasureRef>,
+    color: Option<&MeasureRef>,
+    filter: &Filter,
+    depth: Option<u32>,
+) -> Result<Answer, QueryError> {
+    let size = size
+        .cloned()
+        .unwrap_or_else(|| MeasureRef::Named("lines".to_owned()));
+    validate(filter)?;
+    let size_measure = tree::resolve(&size)?;
+    let color = color
+        .map(|reference| {
+            Ok::<_, QueryError>((tree::resolve(reference)?, measure::label(reference)))
+        })
+        .transpose()?;
+    validate_terms(&size_measure)?;
+    if let Some((measure, _)) = &color {
+        validate_terms(measure)?;
+    }
+    let args = tree::Args {
+        hierarchy,
+        size: &size_measure,
+        size_label: measure::label(&size),
+        color: color.as_ref().map(|(m, label)| (m, label.clone())),
+        filter,
+        depth: depth.unwrap_or(DEPTH_DEFAULT),
+    };
+    tree::tree(index, &args).map(Answer::Tree)
+}
+
+fn xtab_answer(
+    index: &Index,
+    (rows, cols): (Axis, Axis),
+    measure: Option<&MeasureRef>,
+    filter: &Filter,
+    path_depth: Option<u32>,
+) -> Result<Answer, QueryError> {
+    let measure = measure
+        .cloned()
+        .unwrap_or_else(|| MeasureRef::Named("lines".to_owned()));
+    validate(filter)?;
+    let resolved = tree::resolve(&measure)?;
+    validate_terms(&resolved)?;
+    let args = xtab::Args {
+        row_axis: rows,
+        col_axis: cols,
+        measure: &resolved,
+        label: measure::label(&measure),
+        filter,
+        path_depth: path_depth.unwrap_or(PATH_DEPTH_DEFAULT),
+    };
+    xtab::xtab(index, &args).map(Answer::Xtab)
+}
+
+/// Rejects a filter value in any term of the measure that no line can have.
+fn validate_terms(measure: &Measure) -> Result<(), QueryError> {
+    measure
+        .terms()
+        .iter()
+        .try_for_each(|term| validate(&term.filter))
 }
 
 /// Rejects a filter value no line can have, so a typo is an error and not an empty answer.
@@ -319,7 +403,13 @@ fn catalog() -> Catalog {
             Dimension {
                 name: "symbolKind".to_owned(),
                 description: "The kind of the innermost symbol the line sits in".to_owned(),
-                values: names(vec!["module", "type", "function", "test"]),
+                values: names(vec![
+                    "module",
+                    "type",
+                    "function",
+                    "test",
+                    measure::NO_SYMBOL,
+                ]),
             },
         ],
         measures: measure::catalog(),

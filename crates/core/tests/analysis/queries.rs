@@ -1,7 +1,8 @@
 //! The query layer through its public function: filters, measures, tree shaping and the envelope.
 
 use codemap_core::{
-    Answer, Base, Envelope, Filter, Hierarchy, Measure, MeasureRef, Query, QueryError, Tree, answer,
+    Answer, Axis, Base, Envelope, Filter, Hierarchy, Measure, MeasureRef, Query, QueryError,
+    SOURCE_LINES_MAX, Source, Tree, Xtab, answer,
 };
 
 use crate::common::{ask, indexed, plain_functions, write};
@@ -420,4 +421,260 @@ fn the_envelope_names_its_schema_and_flattens_the_answer() {
     )
     .unwrap();
     assert!(matches!(query, Query::Tree { depth: None, .. }));
+}
+
+fn xtab_of(index: &codemap_core::Index, rows: Axis, cols: Axis, filter: Filter) -> Xtab {
+    let query = Query::Xtab {
+        rows,
+        cols,
+        measure: None,
+        filter,
+        path_depth: None,
+    };
+    match ask(index, &query) {
+        Answer::Xtab(xtab) => xtab,
+        other => panic!("not a cross-tab: {other:?}"),
+    }
+}
+
+#[test]
+fn a_cross_tab_adds_up_in_its_cells_and_margins() {
+    let dir = tempfile::tempdir().unwrap();
+    mixed_tree(dir.path());
+    let index = indexed(dir.path());
+    let Answer::Overview(overview) = ask(&index, &Query::Overview) else {
+        panic!()
+    };
+    let xtab = xtab_of(&index, Axis::Role, Axis::Concern, Filter::default());
+    assert_eq!(xtab.total as u64, overview.totals.lines);
+    let cell_sum: f64 = xtab.cells.iter().map(|c| c.value).sum();
+    assert_eq!(cell_sum, xtab.total);
+    for (i, row) in xtab.rows.iter().enumerate() {
+        let across: f64 = xtab
+            .cells
+            .iter()
+            .filter(|c| c.row as usize == i)
+            .map(|c| c.value)
+            .sum();
+        assert_eq!(across, row.total);
+    }
+    // Margins are ordered largest first, and cells point at real headers.
+    assert!(xtab.rows.windows(2).all(|w| w[0].total >= w[1].total));
+    assert!(xtab.cols.windows(2).all(|w| w[0].total >= w[1].total));
+    assert!(
+        xtab.cells
+            .iter()
+            .all(|c| { (c.row as usize) < xtab.rows.len() && (c.col as usize) < xtab.cols.len() })
+    );
+    // The biggest cell takes the top colour step, the smallest the lowest.
+    let scale = xtab.scale.as_ref().expect("cells have a scale");
+    let top = xtab
+        .cells
+        .iter()
+        .max_by(|a, b| a.value.total_cmp(&b.value))
+        .unwrap();
+    let low = xtab
+        .cells
+        .iter()
+        .min_by(|a, b| a.value.total_cmp(&b.value))
+        .unwrap();
+    assert_eq!(top.color_step, scale.steps - 1);
+    assert_eq!(low.color_step, 0);
+}
+
+#[test]
+fn a_cross_tab_honours_filters_and_cuts_paths_at_a_depth() {
+    let dir = tempfile::tempdir().unwrap();
+    mixed_tree(dir.path());
+    let index = indexed(dir.path());
+    let filter = Filter {
+        role: Some("test".to_owned()),
+        ..Filter::default()
+    };
+    let xtab = xtab_of(&index, Axis::Path, Axis::Language, filter);
+    assert_eq!(
+        xtab.rows
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>(),
+        ["tests"]
+    );
+    let deep = Query::Xtab {
+        rows: Axis::Path,
+        cols: Axis::Role,
+        measure: None,
+        filter: Filter::default(),
+        path_depth: Some(3),
+    };
+    let Answer::Xtab(deep) = ask(&index, &deep) else {
+        panic!()
+    };
+    assert!(deep.rows.iter().any(|r| r.name == "src/a/b"));
+    assert!(deep.rows.iter().any(|r| r.name == "notes.md"));
+}
+
+#[test]
+fn a_cross_tab_rejects_a_ratio_and_a_bad_filter() {
+    let dir = tempfile::tempdir().unwrap();
+    mixed_tree(dir.path());
+    let index = indexed(dir.path());
+    let query = |measure: Option<&str>, role: Option<&str>| Query::Xtab {
+        rows: Axis::Role,
+        cols: Axis::Concern,
+        measure: measure.map(|m| MeasureRef::Named(m.to_owned())),
+        filter: Filter {
+            role: role.map(str::to_owned),
+            ..Filter::default()
+        },
+        path_depth: None,
+    };
+    assert!(matches!(
+        answer(&index, &query(Some("test_to_prod_ratio"), None)),
+        Err(QueryError::SizeIsRatio)
+    ));
+    assert!(matches!(
+        answer(&index, &query(None, Some("nonsense"))),
+        Err(QueryError::UnknownValue { .. })
+    ));
+}
+
+fn source_of(
+    index: &codemap_core::Index,
+    path: &str,
+    range: (Option<u32>, Option<u32>),
+) -> Result<Source, QueryError> {
+    let query = Query::Source {
+        path: path.to_owned(),
+        start_line: range.0,
+        end_line: range.1,
+    };
+    answer(index, &query).map(|a| match a {
+        Answer::Source(source) => source,
+        other => panic!("not source: {other:?}"),
+    })
+}
+
+#[test]
+fn source_returns_the_lines_attributed_and_the_findings_that_touch_them() {
+    let dir = tempfile::tempdir().unwrap();
+    mixed_tree(dir.path());
+    let index = indexed(dir.path());
+    let whole = source_of(&index, "src/top.rs", (None, None)).unwrap();
+    let text = std::fs::read_to_string(dir.path().join("src/top.rs")).unwrap();
+    assert_eq!(whole.line_count as usize, text.lines().count());
+    assert_eq!(whole.lines.len(), whole.line_count as usize);
+    assert_eq!(whole.lines[0].number, 1);
+    assert_eq!(whole.lines[0].text, text.lines().next().unwrap());
+    assert!(whole.lines.iter().all(|l| l.role == "prod"));
+
+    let part = source_of(&index, "src/top.rs", (Some(2), Some(3))).unwrap();
+    assert_eq!(
+        part.lines.iter().map(|l| l.number).collect::<Vec<_>>(),
+        [2, 3]
+    );
+    // Every reported range overlaps the lines asked for.
+    assert!(
+        part.findings
+            .iter()
+            .all(|f| f.start_line <= 3 && f.end_line >= 2)
+    );
+    // An end past the file clips to it; a start past it is an error.
+    let beyond = source_of(&index, "src/top.rs", (Some(28), Some(900))).unwrap();
+    assert_eq!(beyond.end_line, whole.line_count);
+    assert!(matches!(
+        source_of(&index, "src/top.rs", (Some(900), Some(901))),
+        Err(QueryError::BadRange)
+    ));
+}
+
+#[test]
+fn source_refuses_paths_outside_the_root_and_files_it_does_not_hold() {
+    let dir = tempfile::tempdir().unwrap();
+    mixed_tree(dir.path());
+    let index = indexed(dir.path());
+    for path in ["../secret", "/etc/passwd", "src/../../x", ""] {
+        assert!(
+            matches!(
+                source_of(&index, path, (None, None)),
+                Err(QueryError::OutsideRoot(_))
+            ),
+            "{path}"
+        );
+    }
+    assert!(matches!(
+        source_of(&index, "src/missing.rs", (None, None)),
+        Err(QueryError::UnknownFile(_))
+    ));
+    assert!(matches!(
+        source_of(&index, "src/top.rs", (Some(5), Some(2))),
+        Err(QueryError::BadRange)
+    ));
+}
+
+#[test]
+fn source_reports_findings_with_their_detector_area_and_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    crate::common::baseline(dir.path(), 20);
+    for i in 0..3 {
+        write(
+            dir.path(),
+            &format!("handlers/h{i}.rs"),
+            &crate::common::handler_functions(&format!("h{i}_"), 20),
+        );
+    }
+    let index = indexed(dir.path());
+    let source = source_of(&index, "handlers/h0.rs", (Some(10), Some(20))).unwrap();
+    assert!(!source.findings.is_empty());
+    assert!(source.findings.iter().all(|f| {
+        !f.detector.is_empty() && !f.reason.is_empty() && f.start_line <= 20 && f.end_line >= 10
+    }));
+    let quiet = source_of(&index, "src/mod0.rs", (None, None)).unwrap();
+    assert!(quiet.findings.is_empty());
+}
+
+#[test]
+fn source_caps_a_long_file_and_counts_what_follows() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "big.rs", &plain_functions("f", 120));
+    let index = indexed(dir.path());
+    let first = source_of(&index, "big.rs", (None, None)).unwrap();
+    assert_eq!(first.lines.len(), SOURCE_LINES_MAX as usize);
+    assert_eq!(first.more, first.line_count - SOURCE_LINES_MAX);
+    let rest = source_of(&index, "big.rs", (Some(first.end_line + 1), None)).unwrap();
+    assert_eq!(rest.start_line, first.end_line + 1);
+    assert_eq!(
+        first.lines.len() as u32 + rest.lines.len() as u32 + rest.more,
+        first.line_count
+    );
+}
+
+#[test]
+fn source_refuses_a_file_changed_since_it_was_indexed() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "a.rs", &plain_functions("f", 2));
+    let index = indexed(dir.path());
+    write(dir.path(), "a.rs", &plain_functions("g", 3));
+    assert!(matches!(
+        source_of(&index, "a.rs", (None, None)),
+        Err(QueryError::Stale(_))
+    ));
+}
+
+#[test]
+fn lines_outside_any_symbol_can_be_filtered_by_the_kind_a_cross_tab_names() {
+    let dir = tempfile::tempdir().unwrap();
+    mixed_tree(dir.path());
+    let index = indexed(dir.path());
+    let by_kind = xtab_of(&index, Axis::Kind, Axis::Role, Filter::default());
+    let none = by_kind
+        .rows
+        .iter()
+        .find(|r| r.name == "none")
+        .expect("bare lines");
+    let filter = Filter {
+        symbol_kind: Some("none".to_owned()),
+        ..Filter::default()
+    };
+    let drilled = xtab_of(&index, Axis::Role, Axis::Concern, filter);
+    assert_eq!(drilled.total, none.total);
 }
