@@ -4,3 +4,4 @@ web/node_modules
 web/dist
 dist/
 .codemap/index.duckdb*
+web/test-results
