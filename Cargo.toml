@@ -48,6 +48,10 @@ ignore = { version = "0.4.34", default-features = false }
 rayon = { version = "1.12.0", default-features = false }
 # Token counts per line with the o200k encoding.
 bpe-openai = { version = "0.3.2", default-features = false }
+# Watches the served tree so `codemap serve` re-indexes what changes.
+notify = { version = "8.2.0", default-features = false, features = ["macos_fsevent"] }
+# Turns the change-notification channel into the stream behind server-sent events.
+tokio-stream = { version = "0.1.19", default-features = false, features = ["sync"] }
 # Throwaway trees for the indexing tests.
 tempfile = { version = "3.27.0", default-features = false }
 
