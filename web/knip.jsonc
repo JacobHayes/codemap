@@ -2,5 +2,7 @@
   // The treemap module is an entry until the Tree query lands and App draws it.
   "entry": ["src/palette.ts", "src/canvas/treemap/Treemap.tsx", "e2e/*.spec.ts"],
   "project": ["src/**/*.{ts,tsx}", "e2e/**/*.ts"],
+  // The wire types are generated whole from the Rust ones; views use them as they land.
+  "ignoreIssues": { "src/generated/**": ["types"] },
   "ignoreDependencies": ["prettier"],
 }

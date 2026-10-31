@@ -21,7 +21,7 @@ export default defineConfig({
   use: { baseURL: `http://127.0.0.1:${port}`, reducedMotion: 'reduce' },
   // The binary as `mise run check` just built it, with the web build embedded.
   webServer: {
-    command: `../target/debug/codemap serve --port ${port}`,
+    command: `../target/debug/codemap serve --root .. --port ${port}`,
     url: `http://127.0.0.1:${port}`,
   },
 });
