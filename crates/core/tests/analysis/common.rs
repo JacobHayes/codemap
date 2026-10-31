@@ -66,3 +66,23 @@ pub fn areas(index: &Index) -> codemap_core::AreaList {
         other => panic!("not areas: {other:?}"),
     }
 }
+
+/// The findings of one detector across every area.
+pub fn findings_of(index: &Index, detector: &str) -> Vec<codemap_core::Finding> {
+    areas(index)
+        .areas
+        .iter()
+        .flat_map(|area| {
+            match ask(
+                index,
+                &Query::Area {
+                    subject: area.subject.clone(),
+                },
+            ) {
+                Answer::Area(detail) => detail.findings,
+                other => panic!("not an area: {other:?}"),
+            }
+        })
+        .filter(|finding| finding.detector == detector)
+        .collect()
+}

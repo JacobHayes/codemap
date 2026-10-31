@@ -4,6 +4,7 @@
 mod composition;
 mod corpus;
 mod duplication;
+mod indirection;
 mod persist;
 mod rank;
 mod rules;
@@ -152,6 +153,7 @@ pub static DETECTORS: &[&dyn Detector] = &[
     &composition::Composition,
     &size::Size,
     &duplication::Duplication,
+    &indirection::Indirection,
     &rules::Rules,
 ];
 

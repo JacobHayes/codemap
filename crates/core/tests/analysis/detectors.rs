@@ -2,26 +2,9 @@
 
 use codemap_core::{Answer, Query, SubjectKind, answer};
 
-use crate::common::{areas, ask, baseline, handler_functions, indexed, plain_functions, write};
-
-fn findings_of(index: &codemap_core::Index, detector: &str) -> Vec<codemap_core::Finding> {
-    areas(index)
-        .areas
-        .iter()
-        .flat_map(|area| {
-            match ask(
-                index,
-                &Query::Area {
-                    subject: area.subject.clone(),
-                },
-            ) {
-                Answer::Area(detail) => detail.findings,
-                other => panic!("not an area: {other:?}"),
-            }
-        })
-        .filter(|finding| finding.detector == detector)
-        .collect()
-}
+use crate::common::{
+    areas, baseline, findings_of, handler_functions, indexed, plain_functions, write,
+};
 
 #[test]
 fn composition_fires_on_a_directory_heavy_in_handling() {

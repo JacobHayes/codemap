@@ -204,6 +204,23 @@ pub(crate) fn run(index: &Index) -> Result<(), QueryError> {
     Ok(())
 }
 
+/// Every edge, in a stable order.
+pub(crate) fn edges(index: &Index) -> Result<Vec<Edge>, QueryError> {
+    let mut statement = index.store().connection().prepare(
+        "SELECT from_symbol, to_symbol, kind, confidence FROM edges
+         ORDER BY from_symbol, to_symbol, kind",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(Edge {
+            from: row.get(0)?,
+            to: row.get(1)?,
+            kind: row.get(2)?,
+            confidence: row.get(3)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
