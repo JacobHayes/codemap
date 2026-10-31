@@ -91,11 +91,12 @@ self-hosted.
 
 ## Views
 
-- **Treemap.** Squarified layout with cushion shading, so nesting reads without borders on
-  every rect. Area is the size measure; fill is the colour measure on its scale. Labels appear
-  only where they fit at the 12px floor. Hover outlines the rect and its ancestors; click selects;
-  double-click drills. Rects too small to see still aggregate into their visible ancestor for
-  hover and selection.
+- **Treemap.** Flat and quiet: squarified tiles with flat fills, separated by small gutters, no
+  shading, borders or gradients. Nesting reads from spacing and a light group tone, and only a
+  few levels below the current root are drawn; deeper levels aggregate into their ancestor until
+  you drill in. Area is the size measure; fill is the colour measure on its scale. A tile big
+  enough shows its name and value at the 12px floor; smaller tiles show nothing. Hover outlines
+  the tile and names its path; click selects; double-click drills.
 - **Cross-tab heatmap.** Rows and columns are dimension values ordered by their totals; cells
   use the measure scale with the value printed where it fits. Margins show row and column
   totals. Clicking a cell adds both values as filters.

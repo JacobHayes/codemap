@@ -246,7 +246,7 @@ Agents get aggregates first and choose how deep to go with `--top` and drill-dow
 React and TypeScript built with Vite, embedded in the binary. React draws the chrome (filters,
 breadcrumbs, tables, panels); views that draw many marks are framework-free canvas modules.
 
-- **Views:** a treemap with cushion shading, a cross-tab heatmap, the area queue and a source
+- **Views:** a flat treemap, a cross-tab heatmap, the area queue and a source
   viewer. A code city may follow, reusing the treemap's layout.
 - **Every canvas is `scene = layout(data, size)` then `paint(scene)`.** Layout is pure and
   property-tested; paint only draws. Picking uses an id buffer.
