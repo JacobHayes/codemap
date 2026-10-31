@@ -1,11 +1,6 @@
-import type { Catalog } from '../generated/Answer';
-import {
-  FILTER_DIMENSIONS,
-  hidesGenerated,
-  type FilterDimension,
-  type Navigate,
-  type UrlState,
-} from '../urlState';
+import type { Catalog, Hidden } from '../generated/Answer';
+import { compact } from '../format';
+import { FILTER_DIMENSIONS, type FilterDimension, type Navigate, type UrlState } from '../urlState';
 import { Link } from './Link';
 
 type HeaderProps = {
@@ -13,6 +8,8 @@ type HeaderProps = {
   navigate: Navigate;
   catalog: Catalog | null;
   areaCount: number | null;
+  /** What the view's answer left out by default, if anything. */
+  hidden: Hidden | null;
 };
 
 const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
@@ -63,7 +60,48 @@ function Tabs({ state, navigate, areaCount }: HeaderProps) {
   );
 }
 
-function FilterBar({ state, navigate, catalog }: Omit<HeaderProps, 'areaCount'>) {
+function PopulationChip({
+  state,
+  navigate,
+  hidden,
+}: Pick<HeaderProps, 'state' | 'navigate' | 'hidden'>) {
+  if (hidden !== null) {
+    return (
+      <span className="chip" data-default-filter>
+        <span className="label">Hiding</span>
+        {`${compact(hidden.lines)} lines of ${hidden.roles.join(' and ')} code`}
+        <button
+          className="ghost chip-remove"
+          aria-label={`Include ${hidden.roles.join(' and ')} code`}
+          onClick={() => {
+            navigate({ includeGenerated: true, selected: null });
+          }}
+        >
+          ×
+        </button>
+      </span>
+    );
+  }
+  // The area queue has no population of its own to include them in.
+  if (!state.includeGenerated || state.role !== null || state.view === 'areas') return null;
+  return (
+    <span className="chip" data-default-filter>
+      <span className="label">Including</span>
+      generated and vendored code
+      <button
+        className="ghost chip-remove"
+        aria-label="Leave out generated and vendored code"
+        onClick={() => {
+          navigate({ includeGenerated: false, selected: null });
+        }}
+      >
+        ×
+      </button>
+    </span>
+  );
+}
+
+function FilterBar({ state, navigate, catalog, hidden }: Omit<HeaderProps, 'areaCount'>) {
   const dimensions = FILTER_DIMENSIONS.map((name) => ({
     name,
     values: catalog?.dimensions.find((d) => d.name === name)?.values ?? [],
@@ -88,21 +126,7 @@ function FilterBar({ state, navigate, catalog }: Omit<HeaderProps, 'areaCount'>)
           </span>
         );
       })}
-      {hidesGenerated(state) && state.view === 'map' && (
-        <span className="chip" data-default-filter>
-          <span className="label">Hiding</span>
-          generated and vendored code
-          <button
-            className="ghost chip-remove"
-            aria-label="Show generated and vendored code"
-            onClick={() => {
-              navigate({ hideGenerated: false, selected: null });
-            }}
-          >
-            ×
-          </button>
-        </span>
-      )}
+      <PopulationChip state={state} navigate={navigate} hidden={hidden} />
       <select
         aria-label="Add a filter"
         value=""
@@ -126,7 +150,11 @@ function FilterBar({ state, navigate, catalog }: Omit<HeaderProps, 'areaCount'>)
   );
 }
 
-function MeasurePicker({ state, navigate, catalog }: Omit<HeaderProps, 'areaCount'>) {
+function MeasurePicker({
+  state,
+  navigate,
+  catalog,
+}: Pick<HeaderProps, 'state' | 'navigate' | 'catalog'>) {
   const measures = catalog?.measures ?? [];
   return (
     <div className="measures">
@@ -177,7 +205,12 @@ export function Header(props: HeaderProps) {
         <Tabs {...props} />
       </div>
       <div className="header-row">
-        <FilterBar state={props.state} navigate={props.navigate} catalog={props.catalog} />
+        <FilterBar
+          state={props.state}
+          navigate={props.navigate}
+          catalog={props.catalog}
+          hidden={props.hidden}
+        />
         {props.state.view === 'map' && (
           <MeasurePicker state={props.state} navigate={props.navigate} catalog={props.catalog} />
         )}

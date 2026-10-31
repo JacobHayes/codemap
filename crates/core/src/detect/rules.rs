@@ -96,7 +96,7 @@ fn check(context: &Context, rule: &Rule, measure: &Measure) -> Result<Vec<Findin
 
 fn units(context: &Context, per: Granularity, measure: &Measure) -> Result<Vec<Unit>, QueryError> {
     let terms = measure.terms();
-    let files = context.index.file_sums(&Filter::default(), &terms)?;
+    let files = context.index.file_sums(&Filter::everything(), &terms)?;
     let ranked = |path: &str| context.corpus.files.contains_key(path);
     match per {
         Granularity::File => Ok(files
@@ -134,7 +134,7 @@ fn units(context: &Context, per: Granularity, measure: &Measure) -> Result<Vec<U
                 .collect())
         }
         Granularity::Function => {
-            let sums: Vec<_> = context.index.symbol_sums(&Filter::default(), &terms)?;
+            let sums: Vec<_> = context.index.symbol_sums(&Filter::everything(), &terms)?;
             let zero = vec![0.0; terms.len()];
             let by_symbol: BTreeMap<String, Vec<f64>> = sums
                 .into_iter()

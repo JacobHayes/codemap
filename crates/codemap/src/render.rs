@@ -4,8 +4,8 @@
 use std::fmt::Write as _;
 
 use codemap_core::{
-    Answer, Area, AreaDetail, AreaList, Catalog, Finding, Overview, SOURCE_LINES_MAX, Share,
-    Source, Tree, TreeNode, Xtab,
+    Answer, Area, AreaDetail, AreaList, Catalog, Finding, Hidden, Overview, SOURCE_LINES_MAX,
+    Share, Source, Tree, TreeNode, Xtab,
 };
 
 /// Children listed under one tile before the rest are summarised.
@@ -152,6 +152,17 @@ fn overview_text(overview: &Overview) -> String {
 }
 
 /// Cross-tabs list their largest rows first; a cell with nothing in it shows a dot.
+/// The line saying what the default population left out, and how to bring it back.
+fn hidden_note(hidden: Option<&Hidden>) -> String {
+    hidden.map_or_else(String::new, |hidden| {
+        format!(
+            "{} lines of {} code hidden; --include-generated counts them\n",
+            whole(u64::from(hidden.lines)),
+            hidden.roles.join(" and ")
+        )
+    })
+}
+
 fn xtab_text(xtab: &Xtab) -> String {
     let measure = if xtab.measure.measure == xtab.measure.unit {
         String::new()
@@ -165,6 +176,7 @@ fn xtab_text(xtab: &Xtab) -> String {
         xtab.rows.len(),
         xtab.cols.len(),
     );
+    out.push_str(&hidden_note(xtab.hidden.as_ref()));
     let mut headers = vec![(format!("{:?}", xtab.row_axis).to_lowercase(), Align::Left)];
     headers.extend(xtab.cols.iter().map(|c| (c.name.clone(), Align::Right)));
     headers.push(("total".to_owned(), Align::Right));
@@ -258,6 +270,7 @@ fn tree_text(tree: &Tree) -> String {
         tree.nodes.len(),
         tree.depth,
     );
+    out.push_str(&hidden_note(tree.hidden.as_ref()));
     if let Some(scale) = &tree.scale {
         let _ = writeln!(
             out,

@@ -78,7 +78,7 @@ fn shares(index: &Index, key: &str, total_lines: f64) -> Result<Vec<Share>, Quer
         Term::new(Base::Tokens, Filter::default()),
     ];
     let mut out: Vec<Share> = index
-        .grouped(&[key], &Filter::default(), &terms)?
+        .grouped(&[key], &Filter::everything(), &terms)?
         .into_iter()
         .map(|(key, sums)| Share {
             name: key.into_iter().next().flatten().unwrap_or_default(),
@@ -99,7 +99,7 @@ pub(crate) fn overview(index: &Index) -> Result<Overview, QueryError> {
     let terms =
         [Base::Lines, Base::Tokens, Base::Nodes].map(|base| Term::new(base, Filter::default()));
     let sums = index
-        .grouped(&[], &Filter::default(), &terms)?
+        .grouped(&[], &Filter::everything(), &terms)?
         .into_iter()
         .next()
         .map_or_else(|| vec![0.0; 3], |(_, sums)| sums);

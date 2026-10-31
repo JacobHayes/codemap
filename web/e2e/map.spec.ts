@@ -85,13 +85,19 @@ test('an area unfolds its evidence and the address remembers it', async ({ page 
   await expect(page.locator('.findings')).toBeVisible();
 });
 
-test('generated and vendored code is hidden until its chip is removed', async ({ page }) => {
+test('generated and vendored code is hidden until its chip is removed, and back', async ({
+  page,
+}) => {
   await page.goto('/');
   await expect(page.locator('.treemap')).not.toHaveAttribute('data-tiles', '0');
   expect(new URL(page.url()).search).toBe('');
-  const hiding = page.locator('.filters .chip', { hasText: 'generated and vendored' });
+  const hiding = page.locator('.filters .chip', { hasText: 'Hiding' });
   await expect(hiding).toBeVisible();
   await hiding.getByRole('button').click();
-  await expect(page).toHaveURL(/hide-generated=false/);
+  await expect(page).toHaveURL(/include-generated=true/);
   await expect(hiding).toHaveCount(0);
+  const including = page.locator('.filters .chip', { hasText: 'Including' });
+  await including.getByRole('button').click();
+  await expect(page).toHaveURL(/^[^?]*$/);
+  await expect(hiding).toBeVisible();
 });

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::detect::{Area, DETECTORS, Finding};
-use crate::measure::{self, Filter, Measure, MeasureDef, MeasureRef};
+use crate::measure::{self, Base, Filter, Measure, MeasureDef, MeasureRef, Term};
 use crate::reader::{Index, QueryError};
 use codemap_lang::{Concern, LANGUAGES, Role};
 
@@ -254,7 +254,9 @@ fn tree_answer(
         filter,
         depth: depth.unwrap_or(DEPTH_DEFAULT),
     };
-    tree::tree(index, &args).map(Answer::Tree)
+    let mut tree = tree::tree(index, &args)?;
+    tree.hidden = hidden(index, filter)?;
+    Ok(Answer::Tree(tree))
 }
 
 fn xtab_answer(
@@ -278,7 +280,59 @@ fn xtab_answer(
         filter,
         path_depth: path_depth.unwrap_or(PATH_DEPTH_DEFAULT),
     };
-    xtab::xtab(index, &args).map(Answer::Xtab)
+    let mut xtab = xtab::xtab(index, &args)?;
+    xtab.hidden = hidden(index, filter)?;
+    Ok(Answer::Xtab(xtab))
+}
+
+/// What the default population left out of an answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "Answer.ts")]
+pub struct Hidden {
+    /// The roles left out.
+    pub roles: Vec<String>,
+    /// Lines of those roles that match the rest of the filter.
+    pub lines: u32,
+}
+
+/// The lines the filter's default population leaves out; `None` when it left none out.
+fn hidden(index: &Index, filter: &Filter) -> Result<Option<Hidden>, QueryError> {
+    let roles = filter.hidden_roles();
+    if roles.is_empty() {
+        return Ok(None);
+    }
+    let terms: Vec<Term> = roles
+        .iter()
+        .map(|role| {
+            Term::new(
+                Base::Lines,
+                Filter {
+                    role: Some((*role).to_owned()),
+                    ..Filter::default()
+                },
+            )
+        })
+        .collect();
+    let widened = Filter {
+        include_generated: true,
+        ..filter.clone()
+    };
+    let lines: f64 = index
+        .grouped(&[], &widened, &terms)?
+        .into_iter()
+        .flat_map(|(_, sums)| sums)
+        .sum();
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "sums of line counts are whole and far below 2^53"
+    )]
+    let lines_whole = lines as u32;
+    Ok((lines > 0.0).then(|| Hidden {
+        roles: roles.iter().map(|role| (*role).to_owned()).collect(),
+        lines: lines_whole,
+    }))
 }
 
 /// Rejects a filter value in any term of the measure that no line can have.
@@ -298,11 +352,9 @@ fn validate(filter: &Filter) -> Result<(), QueryError> {
         ("concern", &filter.concern),
         ("symbolKind", &filter.symbol_kind),
     ];
-    let excluded = filter.exclude_roles.iter().map(|role| ("role", role));
     for (dimension, value) in given
         .into_iter()
         .filter_map(|(dimension, value)| Some((dimension, value.as_ref()?)))
-        .chain(excluded)
     {
         let known = catalog
             .dimensions

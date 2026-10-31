@@ -19,9 +19,10 @@ export type Filter = {
  */
 path?: string, language?: string, role?: string, concern?: string, 
 /**
- * Roles to leave out; lines of any of them do not match.
+ * Count generated and vendored lines too. Unless set (or `role` names one), a query leaves
+ * them out: they are not code anyone wrote here, and they dominate every view otherwise.
  */
-excludeRoles: Array<string>, 
+includeGenerated: boolean, 
 /**
  * The kind of the innermost symbol a line sits in.
  */

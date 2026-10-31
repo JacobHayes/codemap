@@ -59,7 +59,8 @@ your session.
    `codemap source <path> --lines a-b` shows those lines with role, concern and the findings
    touching them (long files come in pages; it says how to ask for the next).
    `codemap xtab --rows role --cols concern` crosses two dimensions (role, concern, language,
-   kind, path) with a measure per cell, to see composition at a glance.
+   kind, path) with a measure per cell, to see composition at a glance. `tree` and `xtab`
+   leave generated and vendored lines out and say how many; `--include-generated` counts them.
 3. Read the evidence with your own tools; a duplication finding lists every copy, so open each
    and compare. Ask: is this mass needed? Is the same idea built
    twice? Are there layers that only pass through? Is the handling or testing out of

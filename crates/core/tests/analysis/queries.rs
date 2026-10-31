@@ -104,7 +104,7 @@ fn depth_aggregates_deeper_mass_into_the_deepest_drawn_ancestor() {
 }
 
 #[test]
-fn excluded_roles_leave_their_lines_out_and_unknown_ones_are_rejected() {
+fn generated_and_vendored_lines_are_hidden_unless_included() {
     let dir = tempfile::tempdir().unwrap();
     mixed_tree(dir.path());
     write(
@@ -113,35 +113,47 @@ fn excluded_roles_leave_their_lines_out_and_unknown_ones_are_rejected() {
         &format!("// @generated\n{}", plain_functions("g", 20)),
     );
     let index = indexed(dir.path());
-    let total = |roles: &[&str]| {
-        tree_with(
-            &index,
-            Filter {
-                exclude_roles: roles.iter().map(|r| (*r).to_owned()).collect(),
-                ..Filter::default()
-            },
-            None,
-            None,
-        )
-        .total
-    };
-    let generated = tree_with(
-        &index,
-        Filter {
-            role: Some("generated".into()),
+    let tree = |filter: Filter| tree_with(&index, filter, None, None);
+    let named = |role: &str| {
+        tree(Filter {
+            role: Some(role.into()),
             ..Filter::default()
-        },
-        None,
-        None,
-    )
-    .total;
-    assert!(generated > 0.0);
-    assert_eq!(total(&[]) - total(&["generated", "vendored"]), generated);
-    let unknown = Filter {
-        exclude_roles: vec!["nope".into()],
-        ..Filter::default()
+        })
     };
-    assert!(answer(&index, &tree_query(unknown, None, None)).is_err());
+    let generated = named("generated");
+    assert!(generated.total > 0.0);
+    assert!(
+        generated.hidden.is_none(),
+        "asking for the role is not hiding it"
+    );
+
+    let default = tree(Filter::default());
+    let everything = tree(Filter::everything());
+    assert_eq!(everything.total - default.total, generated.total);
+    assert!(everything.hidden.is_none());
+    let hidden = default.hidden.expect("the answer says what it left out");
+    assert_eq!(f64::from(hidden.lines), generated.total);
+    assert!(hidden.roles.iter().any(|role| role == "generated"));
+
+    // A cross-tab keeps to the same population and says the same thing.
+    let by_role = |filter| xtab_of(&index, Axis::Role, Axis::Concern, filter);
+    assert!(
+        by_role(Filter::default())
+            .rows
+            .iter()
+            .all(|r| r.name != "generated")
+    );
+    assert!(
+        by_role(Filter::everything())
+            .rows
+            .iter()
+            .any(|r| r.name == "generated")
+    );
+    assert_eq!(by_role(Filter::default()).hidden, Some(hidden));
+
+    // A measure's own filter narrows inside the query's population and never widens it.
+    let ratio = tree_with(&index, Filter::default(), Some("test_to_prod_ratio"), None);
+    assert!(ratio.hidden.is_some());
 }
 
 #[test]

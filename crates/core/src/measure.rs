@@ -14,21 +14,63 @@ pub struct Filter {
     pub language: Option<String>,
     pub role: Option<String>,
     pub concern: Option<String>,
-    /// Roles to leave out; lines of any of them do not match.
-    pub exclude_roles: Vec<String>,
+    /// Count generated and vendored lines too. Unless set (or `role` names one), a query leaves
+    /// them out: they are not code anyone wrote here, and they dominate every view otherwise.
+    pub include_generated: bool,
     /// The kind of the innermost symbol a line sits in.
     pub symbol_kind: Option<String>,
 }
 
 impl Filter {
-    /// Whether no dimension is constrained.
+    /// Every line, generated and vendored included.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
-        *self == Self::default()
+    pub fn everything() -> Self {
+        Self {
+            include_generated: true,
+            ..Self::default()
+        }
     }
 
-    /// A SQL condition over `line_facts` with its bound values; `true` when empty.
+    /// The roles this filter leaves out of its population: generated and vendored lines, unless
+    /// the filter includes them or asks for a role itself.
+    #[must_use]
+    pub fn hidden_roles(&self) -> &'static [&'static str] {
+        if self.include_generated || self.role.is_some() {
+            &[]
+        } else {
+            HIDDEN_ROLES
+        }
+    }
+
+    /// A SQL condition over `line_facts` with its bound values, population included; `true`
+    /// when nothing narrows.
     pub(crate) fn sql(&self) -> (String, Vec<String>) {
+        let (mut conditions, mut values) = self.explicit_conditions();
+        let hidden = self.hidden_roles();
+        if !hidden.is_empty() {
+            let marks = vec!["?"; hidden.len()].join(", ");
+            conditions.push(format!("role NOT IN ({marks})"));
+            values.extend(hidden.iter().map(|role| (*role).to_owned()));
+        }
+        Self::join(&conditions, values)
+    }
+
+    /// The condition of the dimensions that are set, without the default population: a measure's
+    /// own filter narrows within the query's population and never widens it.
+    pub(crate) fn explicit_sql(&self) -> (String, Vec<String>) {
+        let (conditions, values) = self.explicit_conditions();
+        Self::join(&conditions, values)
+    }
+
+    fn join(conditions: &[String], values: Vec<String>) -> (String, Vec<String>) {
+        if conditions.is_empty() {
+            ("true".to_owned(), values)
+        } else {
+            (conditions.join(" AND "), values)
+        }
+    }
+
+    fn explicit_conditions(&self) -> (Vec<String>, Vec<String>) {
         let mut conditions = Vec::new();
         let mut values = Vec::new();
         if let Some(path) = self.path.as_deref().map(|p| p.trim_matches('/'))
@@ -56,18 +98,12 @@ impl Filter {
                 }
             }
         }
-        if !self.exclude_roles.is_empty() {
-            let marks = vec!["?"; self.exclude_roles.len()].join(", ");
-            conditions.push(format!("role NOT IN ({marks})"));
-            values.extend(self.exclude_roles.iter().cloned());
-        }
-        if conditions.is_empty() {
-            ("true".to_owned(), values)
-        } else {
-            (conditions.join(" AND "), values)
-        }
+        (conditions, values)
     }
 }
+
+/// The roles a query leaves out unless it includes them.
+pub const HIDDEN_ROLES: &[&str] = &["generated", "vendored"];
 
 /// How files with no grammar are named as a language.
 pub const OTHER_LANGUAGE: &str = "other";
@@ -127,7 +163,7 @@ impl Term {
 
     /// `SUM(CASE WHEN <filter> THEN <base> ELSE 0 END)` and the values it binds.
     pub(crate) fn sql(&self) -> (String, Vec<String>) {
-        let (condition, values) = self.filter.sql();
+        let (condition, values) = self.filter.explicit_sql();
         (
             format!(
                 "CAST(coalesce(sum(CASE WHEN {condition} THEN {} ELSE 0 END), 0) AS DOUBLE)",

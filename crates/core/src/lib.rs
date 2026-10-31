@@ -34,9 +34,9 @@ pub use measure::{
 };
 pub use query::{
     Answer, AreaCounts, AreaDetail, AreaList, Axis, Catalog, DEPTH_DEFAULT, DetectorCount,
-    DetectorInfo, Dimension, Envelope, Hierarchy, Overview, PATH_DEPTH_DEFAULT, Query, SCALE_STEPS,
-    SCHEMA, SOURCE_LINES_MAX, Scale, Share, SizeInfo, Source, SourceFinding, SourceLine, Spacing,
-    Totals, Tree, TreeNode, Xtab, XtabCell, XtabHeader, answer,
+    DetectorInfo, Dimension, Envelope, Hidden, Hierarchy, Overview, PATH_DEPTH_DEFAULT, Query,
+    SCALE_STEPS, SCHEMA, SOURCE_LINES_MAX, Scale, Share, SizeInfo, Source, SourceFinding,
+    SourceLine, Spacing, Totals, Tree, TreeNode, Xtab, XtabCell, XtabHeader, answer,
 };
 pub use reader::{Index, QueryError};
 pub use role::role_for_path;

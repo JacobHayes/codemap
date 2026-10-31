@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import type { Hidden } from './generated/Answer';
 import { AreaQueue } from './components/AreaQueue';
 import { Header } from './components/Header';
 import { MapView } from './components/MapView';
@@ -19,19 +21,21 @@ function Shell() {
   const catalogLoad = useAnswer({ kind: 'catalog' }, 'catalog');
   const catalog = catalogLoad.state === 'ready' ? catalogLoad.answer : null;
   const areas = useAnswer({ kind: 'areas' }, 'areas');
+  const [hidden, setHidden] = useState<Hidden | null>(null);
   return (
     <div className="app">
       <Header
         state={state}
         navigate={navigate}
         catalog={catalog}
+        hidden={hidden}
         areaCount={areas.state === 'ready' ? areas.answer.matching : null}
       />
       <main className="workspace">
         {state.view === 'areas' ? (
           <AreaQueue state={state} navigate={navigate} />
         ) : (
-          <MapView state={state} navigate={navigate} catalog={catalog} />
+          <MapView state={state} navigate={navigate} catalog={catalog} onHidden={setHidden} />
         )}
       </main>
     </div>

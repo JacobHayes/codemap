@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::Hidden;
 use super::scale::{self, Scale};
 use super::tree::SizeInfo;
 use crate::measure::{Filter, Measure, NO_SYMBOL, OTHER_LANGUAGE};
@@ -93,6 +94,8 @@ pub struct Xtab {
     /// Row-major.
     pub cells: Vec<XtabCell>,
     pub scale: Option<Scale>,
+    /// What the default population left out.
+    pub hidden: Option<Hidden>,
 }
 
 pub(crate) struct Args<'a> {
@@ -175,5 +178,6 @@ pub(crate) fn xtab(index: &Index, args: &Args) -> Result<Xtab, QueryError> {
         cols,
         cells: placed,
         scale,
+        hidden: None,
     })
 }

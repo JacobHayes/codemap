@@ -123,6 +123,25 @@ fn xtab_and_source_answer_in_text_and_json() {
             .starts_with("total")
     );
 
+    // Generated code is left out unless asked for, and the answer says so.
+    fs::write(
+        root.join("gen.py"),
+        format!("# @generated\n{}", "x = 1\n".repeat(40)),
+    )
+    .expect("write");
+    let total = |extra: &[&str]| {
+        let args = [
+            &["xtab", "--rows", "role", "--cols", "concern", "--json"],
+            extra,
+        ]
+        .concat();
+        json(&run(root, &args))
+    };
+    let (default, included) = (total(&[]), total(&["--include-generated"]));
+    assert!(default["hidden"]["lines"].as_u64().expect("lines hidden") > 0);
+    assert!(included["hidden"].is_null());
+    assert!(included["total"].as_f64() > default["total"].as_f64());
+
     let source = json(&run(
         root,
         &["source", "huge.py", "--lines", "2-3", "--json"],

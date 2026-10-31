@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::Hidden;
 use super::scale::{self, Scale};
 use crate::measure::{self, Filter, Measure, MeasureRef};
 use crate::reader::{Index, QueryError, SymbolRow};
@@ -71,6 +72,8 @@ pub struct Tree {
     pub total: f64,
     pub nodes: Vec<TreeNode>,
     pub scale: Option<Scale>,
+    /// What the default population left out.
+    pub hidden: Option<Hidden>,
 }
 
 #[derive(Clone)]
@@ -217,6 +220,7 @@ fn finish(accs: &[Acc], args: &Args, unit: &str) -> Tree {
         total,
         nodes,
         scale,
+        hidden: None,
     }
 }
 

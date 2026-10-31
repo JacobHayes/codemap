@@ -120,6 +120,19 @@ facts: Array<string>, evidence: Array<Evidence>,
 acknowledged: string | null, };
 
 /**
+ * What the default population left out of an answer.
+ */
+export type Hidden = { 
+/**
+ * The roles left out.
+ */
+roles: Array<string>, 
+/**
+ * Lines of those roles that match the rest of the filter.
+ */
+lines: number, };
+
+/**
  * A named measure in the catalog.
  */
 export type MeasureDef = { name: string, description: string, measure: Measure, };
@@ -205,7 +218,11 @@ export type SubjectKind = "directory" | "file" | "function" | "group";
 
 export type Totals = { files: bigint, lines: bigint, tokens: bigint, nodes: bigint, symbols: bigint, };
 
-export type Tree = { hierarchy: Hierarchy, depth: number, size: SizeInfo, total: number, nodes: Array<TreeNode>, scale: Scale | null, };
+export type Tree = { hierarchy: Hierarchy, depth: number, size: SizeInfo, total: number, nodes: Array<TreeNode>, scale: Scale | null, 
+/**
+ * What the default population left out.
+ */
+hidden: Hidden | null, };
 
 export type TreeNode = { 
 /**
@@ -253,7 +270,11 @@ rows: Array<XtabHeader>, cols: Array<XtabHeader>,
 /**
  * Row-major.
  */
-cells: Array<XtabCell>, scale: Scale | null, };
+cells: Array<XtabCell>, scale: Scale | null, 
+/**
+ * What the default population left out.
+ */
+hidden: Hidden | null, };
 
 /**
  * A non-empty cell, by position in `rows` and `cols`.

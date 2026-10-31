@@ -34,6 +34,10 @@ pub struct FilterArgs {
     pub concern: Option<String>,
     #[arg(long)]
     pub symbol_kind: Option<String>,
+    /// Count generated and vendored code, which is left out otherwise.
+    #[arg(long)]
+    #[serde(default)]
+    pub include_generated: bool,
 }
 
 impl FilterArgs {
@@ -44,7 +48,7 @@ impl FilterArgs {
             role: self.role,
             concern: self.concern,
             symbol_kind: self.symbol_kind,
-            ..Filter::default()
+            include_generated: self.include_generated,
         }
     }
 }

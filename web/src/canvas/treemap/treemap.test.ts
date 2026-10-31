@@ -44,6 +44,7 @@ function payload(rows: Row[]): Tree {
     total: total.get(rows[0]?.[0] ?? 0) ?? 0,
     nodes,
     scale: SCALE,
+    hidden: null,
   };
 }
 

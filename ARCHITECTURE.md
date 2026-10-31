@@ -245,6 +245,9 @@ surfaces cannot drift.
 | `Source` | One file's lines (a page at a time) with role, concern and finding ranges; the text is read from the file and refused when it changed since indexing |
 | `Catalog` | Dimensions, measures and detectors available |
 
+- **One population.** Every query that takes filters leaves generated and vendored lines out
+  unless the filter sets `includeGenerated` (`--include-generated`) or names a role, and its
+  answer says what it left out. Surfaces do not choose a population of their own.
 - **CLI.** A verb per query (`codemap overview`, `codemap areas --top 20`, `codemap xtab --rows
   role --cols concern`), plus `index`, `serve` and `mcp`. Human text by default, the envelope
   with `--json`. Paths are relative to the root.

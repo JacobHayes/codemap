@@ -1,26 +1,22 @@
 import { useState } from 'react';
 import { Treemap, type Pointed } from '../canvas/treemap/Treemap';
-import type { Catalog, Tree } from '../generated/Answer';
+import type { Catalog, Hidden, Tree } from '../generated/Answer';
 import type { Query } from '../generated/Query';
 import { exactAmount } from '../format';
 import { useAnswer } from '../useAnswer';
-import {
-  HIDDEN_ROLES,
-  hasFilters,
-  hidesGenerated,
-  type Navigate,
-  type UrlState,
-} from '../urlState';
+import { useReportHidden } from '../useReportHidden';
+import { hasFilters, type Navigate, type UrlState } from '../urlState';
 import { viewStateOf } from '../viewState';
 import { Legend } from './Legend';
 import { Tooltip } from './Tooltip';
 
 /** The tree query for a state; unset fields are left out so the server's defaults apply. */
 function treeQuery(state: UrlState): Query {
-  const filter: Extract<Query, { kind: 'tree' }>['filter'] = { excludeRoles: [] };
+  const filter: Extract<Query, { kind: 'tree' }>['filter'] = {
+    includeGenerated: state.includeGenerated,
+  };
   if (state.path !== '') filter.path = state.path;
   if (state.role !== null) filter.role = state.role;
-  if (hidesGenerated(state)) filter.excludeRoles = [...HIDDEN_ROLES];
   if (state.concern !== null) filter.concern = state.concern;
   if (state.language !== null) filter.language = state.language;
   const query: Extract<Query, { kind: 'tree' }> = {
@@ -39,6 +35,8 @@ type MapProps = {
   state: UrlState;
   navigate: Navigate;
   catalog: Catalog | null;
+  /** Tells the filter bar what the answer left out. */
+  onHidden: (hidden: Hidden | null) => void;
 };
 
 function SelectionBar({
@@ -77,7 +75,7 @@ function Empty({ state, navigate }: Pick<MapProps, 'state' | 'navigate'>) {
               role: null,
               concern: null,
               language: null,
-              hideGenerated: true,
+              includeGenerated: false,
               selected: null,
             });
           }}
@@ -90,9 +88,11 @@ function Empty({ state, navigate }: Pick<MapProps, 'state' | 'navigate'>) {
 }
 
 /** The map: the treemap, its tooltip, the selection and the colour legend. */
-export function MapView({ state, navigate, catalog }: MapProps) {
+export function MapView({ state, navigate, catalog, onHidden }: MapProps) {
   const load = useAnswer(treeQuery(state), 'tree');
   const [pointed, setPointed] = useState<Pointed | null>(null);
+  const hidden = load.state === 'ready' ? load.answer.hidden : null;
+  useReportHidden(hidden, onHidden);
   if (load.state !== 'ready') {
     return (
       <section className="map" data-state={load.state}>
