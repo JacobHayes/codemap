@@ -1,0 +1,22 @@
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+.app-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background: var(--chrome-bg);
+  color: var(--chrome-ink);
+  border-bottom: 1px solid var(--chrome-border);
+}
+.app-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.app .workspace {
+  overflow: auto;
+}

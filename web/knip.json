@@ -1,0 +1,5 @@
+{
+  "entry": ["src/palette.ts", "e2e/*.spec.ts"],
+  "project": ["src/**/*.{ts,tsx}", "e2e/**/*.ts"],
+  "ignoreDependencies": ["prettier"]
+}
