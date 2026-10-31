@@ -58,6 +58,8 @@ bpe-openai = { version = "0.3.2", default-features = false }
 notify = { version = "8.2.0", default-features = false, features = ["macos_fsevent"] }
 # Turns the change-notification channel into the stream behind server-sent events.
 tokio-stream = { version = "0.1.19", default-features = false, features = ["sync"] }
+# The blocking HTTP client for model APIs (embeddings, chat completions): the calls run on plain threads next to rayon, so no async runtime is needed, and rustls keeps the binary free of system TLS libraries.
+ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 # Throwaway trees for the indexing tests.
 tempfile = { version = "3.27.0", default-features = false }
 
