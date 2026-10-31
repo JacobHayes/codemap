@@ -17,8 +17,6 @@ export type Swatch = {
 };
 
 const RAMP_HUE = 250;
-// The warm counterpart of the diverging scale: amber, opposite the ramp's blue.
-const WARM_HUE = 65;
 
 function srgbByte(linear: number): number {
   const v = linear <= 0.0031308 ? 12.92 * linear : 1.055 * Math.pow(linear, 1 / 2.4) - 0.055;
@@ -84,26 +82,47 @@ function swatch(lightness: number, chroma: number, hue: number): Swatch {
 }
 
 // Lightness runs [low, high] across the scale: low magnitudes are pale on paper and deep on the
-// dark ground, so a bigger value is always the more prominent mark.
+// dark ground, so a bigger value is always the more prominent mark. `low` stays clear of the
+// neutral fills below, so no step reads as "no value"; `mid` is the diverging midpoint.
 const LIGHTNESS = {
-  light: { low: 0.94, high: 0.36 },
-  dark: { low: 0.34, high: 0.88 },
+  light: { low: 0.8, mid: 0.97, high: 0.42 },
+  dark: { low: 0.44, mid: 0.44, high: 0.88 },
 } as const;
 
-/** `steps` swatches, lowest value first. A diverging scale's middle is its pale (light) or deep (dark) neutral. */
+// Neither scale uses the accent's blue (selection must stand out): both end in amber, the
+// diverging one starting from a low-chroma steel.
+const AMBER_HUE = 70;
+const STEEL_HUE = 240;
+
+/** `steps` swatches, lowest value first. A diverging scale's middle is its neutral. */
 export function scaleSwatches(kind: ScaleKind, steps: number, theme: Theme): Swatch[] {
-  const { low, high } = LIGHTNESS[theme];
+  const { low, mid, high } = LIGHTNESS[theme];
   return Array.from({ length: steps }, (_, i) => {
     const t = steps === 1 ? 0.5 : i / (steps - 1);
-    if (kind === 'sequential') return swatch(low + (high - low) * t, 0.03 + 0.1 * Math.sin(Math.PI * t), RAMP_HUE);
+    if (kind === 'sequential') {
+      return swatch(
+        low + (high - low) * t,
+        0.012 + 0.13 * t ** 1.3,
+        t < 0.08 ? RAMP_HUE : AMBER_HUE,
+      );
+    }
     const away = Math.abs(2 * t - 1);
-    return swatch(low + (high - low) * away, 0.012 + 0.11 * away, t < 0.5 ? RAMP_HUE : WARM_HUE);
+    const warm = t > 0.5;
+    return swatch(
+      mid + (high - mid) * away,
+      0.012 + (warm ? 0.13 : 0.045) * away,
+      warm ? AMBER_HUE : STEEL_HUE,
+    );
   });
 }
 
 /** Fills for nodes with no colour step: a leaf, and a directory the leaves sit in. */
 export function neutralSwatch(role: 'leaf' | 'group', theme: Theme): Swatch {
   const light = theme === 'light';
-  if (role === 'leaf') return light ? swatch(0.87, 0.014, RAMP_HUE) : swatch(0.37, 0.014, RAMP_HUE);
+  if (role === 'leaf') return light ? swatch(0.87, 0.004, RAMP_HUE) : swatch(0.33, 0.004, RAMP_HUE);
   return light ? swatch(0.91, 0.012, RAMP_HUE) : swatch(0.27, 0.013, RAMP_HUE);
 }
+
+/** Hover outlines: the chart ink of the theme (--chart-ink). */
+export const outlineCss = (theme: Theme) =>
+  css(theme === 'light' ? INK_DARK : oklch(0.965, 0.007, RAMP_HUE));

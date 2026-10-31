@@ -41,4 +41,19 @@ describe('palette', () => {
       }
     }
   });
+
+  it('keeps "no value" distinct from the scales\' low and middle steps', () => {
+    for (const theme of themes) {
+      const leaf = neutralSwatch('leaf', theme).lightness;
+      const group = neutralSwatch('group', theme).lightness;
+      const others = [
+        ...scaleSwatches('sequential', 9, theme).slice(0, 1),
+        ...scaleSwatches('diverging', 9, theme).slice(4, 5),
+      ].map((s) => s.lightness);
+      for (const l of others) {
+        expect(Math.abs(l - leaf)).toBeGreaterThanOrEqual(0.05);
+        expect(Math.abs(l - group)).toBeGreaterThanOrEqual(0.05);
+      }
+    }
+  });
 });
