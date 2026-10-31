@@ -33,6 +33,13 @@ fn rust_lines_carry_role_and_concern() {
     assert_eq!(at(23), pair("test", "import"));
     assert_eq!(at(27), pair("test", "assertion"));
     assert_eq!(at(29), pair("test", "core"));
+    // `if let Err` and the `else` of `let .. else` are handling; the success branch is not.
+    assert_eq!(at(37), pair("prod", "handler"));
+    assert_eq!(at(38), pair("prod", "handler"));
+    assert_eq!(at(40), pair("prod", "core"));
+    assert_eq!(at(42), pair("prod", "handler"));
+    assert_eq!(at(43), pair("prod", "handler"));
+    assert_eq!(at(45), pair("prod", "core"));
 }
 
 #[test]
@@ -56,6 +63,10 @@ fn rust_symbols_nest_and_tests_are_tests() {
             expect("area", "function", None, 9, 19),
             expect("tests", "module", None, 22, 29),
             expect("area_is_positive", "test", Some("tests"), 26, 28),
+            // Methods sit under the type their `impl` block names.
+            expect("Shape", "type", None, 31, 47),
+            expect("sides", "function", Some("Shape"), 32, 34),
+            expect("checked", "function", Some("Shape"), 36, 46),
         ]
     );
 }

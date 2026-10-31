@@ -104,6 +104,9 @@ pub struct Language {
     pub kinds: &'static [(&'static str, Kind)],
     /// The grammar crate's tags query: definitions become symbols, references become refs.
     pub tags_query: &'static str,
+    /// Further definition patterns for scopes the tags query leaves out, such as Rust `impl`
+    /// blocks, so a method's parent is its type.
+    pub extra_tags_query: &'static str,
     /// Fields of a call node that hold the callee.
     pub callee_fields: &'static [&'static str],
     /// Callee names (last path segment) that are logging.

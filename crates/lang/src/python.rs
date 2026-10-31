@@ -28,6 +28,7 @@ pub static PYTHON: Language = Language {
         ("future_import_statement", Kind::Import),
     ],
     tags_query: tree_sitter_python::TAGS_QUERY,
+    extra_tags_query: "",
     callee_fields: &["function"],
     logging_callees: &[
         "debug",
