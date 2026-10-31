@@ -271,3 +271,59 @@ fn wrappers_that_forward_round_a_cycle_and_same_named_implementors_are_handled()
     assert!(signal(&index, "pass_through").is_empty());
     assert!(signal(&index, "single_implementation").is_empty());
 }
+
+#[test]
+fn a_call_that_adds_a_string_or_crosses_languages_is_not_a_wrapper() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    write(dir.path(), "src/worker.rs", WORKER);
+    write(
+        dir.path(),
+        "src/api.rs",
+        "pub fn read_config(path: &str) -> String {\n    load_config_as(path, \"upper\")\n}\n\npub fn load_config_as(path: &str, mode: &str) -> String {\n    let text = path.trim();\n    format!(\"{mode}{text}\")\n}\n",
+    );
+    // A script's `load_config(path)` has no script definition, and the Rust one is out of reach.
+    write(
+        dir.path(),
+        "web/api.ts",
+        "export function readConfig(path: string) {\n  return load_config(path);\n}\n",
+    );
+    let index = indexed(dir.path());
+    assert!(signal(&index, "pass_through").is_empty());
+}
+
+#[test]
+fn a_method_of_a_constant_or_of_a_destructured_parameter_is_not_a_forwarded_call() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    write(
+        dir.path(),
+        "web/lists.ts",
+        "export function includes(list: string[], item: string) {\n  const found = list.indexOf(item);\n  return found >= 0 ? list[found] : undefined;\n}\n",
+    );
+    write(
+        dir.path(),
+        "web/model.ts",
+        "const KINDS = ['a', 'b'];\n\nexport function isKind(kind: string) {\n  return KINDS.includes(kind);\n}\n\nexport const read = ({ tokens }: Host) => tokens.includes();\n",
+    );
+    let index = indexed(dir.path());
+    assert!(signal(&index, "pass_through").is_empty());
+}
+
+#[test]
+fn a_type_assertion_with_a_string_type_is_still_a_wrapper() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    write(
+        dir.path(),
+        "web/sink.ts",
+        "export function sink(kind: string) {\n  const upper = kind.toUpperCase();\n  return upper + kind;\n}\n",
+    );
+    write(
+        dir.path(),
+        "web/wrap.ts",
+        "export function wrap(kind: string) {\n  return sink(kind as \"a\");\n}\n",
+    );
+    let index = indexed(dir.path());
+    assert_eq!(signal(&index, "pass_through").len(), 1);
+}

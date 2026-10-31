@@ -76,20 +76,25 @@ impl Body {
 }
 
 /// The identifiers a subtree names: `self` and `this` count, so do plain and type identifiers.
-fn identifiers<'a>(node: &Node, source: &'a [u8], out: &mut BTreeSet<&'a str>) {
+/// In `binding` position (a parameter list) a destructured name counts too.
+fn identifiers<'a>(node: &Node, source: &'a [u8], binding: bool, out: &mut BTreeSet<&'a str>) {
     let kind = node.kind();
-    if node.child_count() == 0 && (kind.ends_with("identifier") || matches!(kind, "self" | "this"))
-    {
+    let named = if binding {
+        kind.contains("identifier")
+    } else {
+        kind.ends_with("identifier")
+    };
+    if node.child_count() == 0 && (named || matches!(kind, "self" | "this")) {
         out.insert(text(node, source));
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        identifiers(&child, source, out);
+        identifiers(&child, source, binding, out);
     }
 }
 
 /// The last name of a callee when the name says what it is: `a::b::<T>::c` and `self.c` are
-/// `c`, and so is `module.c` for a plain identifier that is not a parameter. A call through
+/// `c`, and so is `module.c` for a plain identifier that is not a parameter or a constant. A call through
 /// anything else (`self.items.c`, `argument.c`) goes to a type the names cannot tell.
 fn callee_name(
     language: &Language,
@@ -107,8 +112,13 @@ fn callee_name(
     if let Some((receiver, _)) = callee.rsplit_once('.') {
         let receiver = receiver.trim_end_matches('?');
         let plain = receiver.chars().all(|c| c.is_alphanumeric() || c == '_');
+        // `KINDS.includes` calls a method of a constant, not a function of a module.
+        let constant = receiver
+            .chars()
+            .all(|c| c.is_uppercase() || c.is_ascii_digit() || c == '_');
         let own = matches!(receiver, "self" | "this" | "cls");
-        if !(own || plain && !parameters.contains(receiver)) {
+        let module = plain && !constant && !parameters.contains(receiver);
+        if !(own || module) {
             return None;
         }
     }
@@ -137,7 +147,9 @@ fn strip_generics(text: &str) -> String {
 }
 
 /// The name of the function a function only forwards to: its body is one call whose arguments
-/// are its own parameters (or literals), with at most [`FORWARD_EXTRA_NODES_MAX`] other nodes.
+/// are its own parameters, with at most [`FORWARD_EXTRA_NODES_MAX`] other nodes. A string among
+/// the arguments adds something of its own (`(e) => pinned(e, "pinned")` picks a case), so that
+/// call is not forwarding.
 pub(crate) fn forwarded_callee(
     language: &Language,
     kinds: &[Option<Kind>],
@@ -162,12 +174,15 @@ pub(crate) fn forwarded_callee(
     }
     let call = first_call(kinds, &body)?;
     let arguments = call.child_by_field_name("arguments")?;
+    if passes_string(kinds, &arguments) {
+        return None;
+    }
     let mut passed = BTreeSet::new();
-    identifiers(&arguments, source, &mut passed);
+    identifiers(&arguments, source, false, &mut passed);
     let mut own = BTreeSet::new();
     for field in ["parameters", "parameter"] {
         if let Some(parameters) = function.child_by_field_name(field) {
-            identifiers(&parameters, source, &mut own);
+            identifiers(&parameters, source, true, &mut own);
         }
     }
     // Passing nothing on is not forwarding unless there was nothing to pass.
@@ -177,6 +192,14 @@ pub(crate) fn forwarded_callee(
     (passed.is_subset(&own) && (passes_arguments || !has_arguments))
         .then(|| callee_name(language, &call, source, &own))
         .flatten()
+}
+
+/// Whether a string is passed as an argument itself; one inside a type assertion is erased.
+fn passes_string(kinds: &[Option<Kind>], arguments: &Node) -> bool {
+    let mut cursor = arguments.walk();
+    arguments
+        .named_children(&mut cursor)
+        .any(|argument| kind_of(kinds, &argument) == Some(Kind::String))
 }
 
 /// Statements of a body, not counting comments and a lone string (a docstring).

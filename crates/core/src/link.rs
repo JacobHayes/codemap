@@ -16,6 +16,8 @@
 //! ambiguous beyond use (`new`, `get`, `len`) and the reference is dropped rather than spread
 //! thin. Further rules:
 //!
+//! - A reference resolves only within its own language: a TypeScript `test` call is not the Rust
+//!   function `test`. JavaScript and TypeScript call each other, so they count as one.
 //! - Generated and vendored symbols are neither ends of an edge: nobody can cut them.
 //! - A reference outside any symbol, and one that resolves to the symbol it sits in
 //!   (recursion, or a method delegating to a same-named method of another type), makes no edge.
@@ -28,6 +30,7 @@
 
 use std::collections::BTreeMap;
 
+use codemap_lang::language_for_path;
 use duckdb::params;
 
 use crate::detect::is_ranked;
@@ -72,6 +75,14 @@ fn references(index: &Index) -> Result<Vec<Reference>, QueryError> {
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// What a path's references can reach: its language, with the script languages merged.
+fn family(path: &str) -> Option<&'static str> {
+    language_for_path(path).map(|language| match language.name {
+        "javascript" | "typescript" | "tsx" => "script",
+        name => name,
+    })
+}
+
 fn directory(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(dir, _)| dir)
 }
@@ -96,9 +107,13 @@ impl<'a> Definitions<'a> {
     /// The candidates of the first tier that has any, and that tier's confidence.
     fn resolve(&self, reference: &Reference) -> Option<(Vec<&'a SymbolRow>, f64)> {
         let files = self.0.get(reference.name.as_str())?;
-        let accepts = |symbol: &&SymbolRow| match reference.kind.as_str() {
-            "call" | "class" => matches!(symbol.kind.as_str(), "function" | "type"),
-            _ => symbol.kind == "type",
+        let reference_family = family(&reference.path);
+        let accepts = |symbol: &&SymbolRow| {
+            family(&symbol.path) == reference_family
+                && match reference.kind.as_str() {
+                    "call" | "class" => matches!(symbol.kind.as_str(), "function" | "type"),
+                    _ => symbol.kind == "type",
+                }
         };
         let pick = |tier: Vec<&'a SymbolRow>| (!tier.is_empty()).then_some(tier);
         let here = pick(
