@@ -74,6 +74,7 @@ fn indexed_copies() -> (tempfile::TempDir, codemap_core::Index) {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "a.rs", &total("total", "items", "sum", "1.5"));
     write(dir.path(), "b.rs", &total("total", "items", "sum", "1.5"));
+    write(dir.path(), "c.rs", &total("total", "items", "sum", "1.5"));
     let index = indexed(dir.path());
     (dir, index)
 }
@@ -83,6 +84,7 @@ fn renamed_copies_group_as_near_and_say_so() {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "a.rs", &total("total", "items", "sum", "1.5"));
     write(dir.path(), "b.rs", &total("cost", "lines", "acc", "2.0"));
+    write(dir.path(), "c.rs", &total("sum_up", "rows", "tot", "3.0"));
     let index = indexed(dir.path());
     let found = duplication_in(&index, "a.rs");
     assert_eq!(found.len(), 1);
@@ -103,6 +105,7 @@ fn copies_in_test_code_use_the_same_engine_and_are_labelled_tests() {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "tests/a.rs", &test("removes_one"));
     write(dir.path(), "tests/b.rs", &test("drops_one"));
+    write(dir.path(), "tests/c.rs", &test("loses_one"));
     let index = indexed(dir.path());
     let found = duplication_in(&index, "tests/a.rs");
     assert_eq!(found.len(), 1);
@@ -115,6 +118,11 @@ fn every_file_of_a_group_gets_an_area() {
     baseline(dir.path(), 20);
     write(dir.path(), "a/one.rs", &total("one", "items", "sum", "1.5"));
     write(dir.path(), "b/two.rs", &total("two", "items", "sum", "1.5"));
+    write(
+        dir.path(),
+        "c/three.rs",
+        &total("three", "items", "sum", "1.5"),
+    );
     let index = indexed(dir.path());
     let listed = areas(&index);
     let area = listed
@@ -129,8 +137,20 @@ fn every_file_of_a_group_gets_an_area() {
             .iter()
             .filter(|a| a.detectors.contains(&"duplication".to_owned()))
             .count(),
-        2
+        3
     );
+}
+
+#[test]
+fn a_small_group_is_paired_but_does_not_become_an_area() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 20);
+    // Two copies of a nine-line function duplicate fewer lines than an area is worth.
+    write(dir.path(), "a.rs", &total("one", "items", "sum", "1.5"));
+    write(dir.path(), "b.rs", &total("two", "items", "sum", "1.5"));
+    let index = indexed(dir.path());
+    assert!(all_duplication(&index).is_empty());
+    assert_eq!(crate::similarity::pair_count(dir.path()), 1);
 }
 
 #[test]

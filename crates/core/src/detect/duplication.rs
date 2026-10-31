@@ -10,6 +10,11 @@ use super::{Context, Detector, Finding, SubjectKind, count, percent};
 use crate::reader::QueryError;
 use crate::similarity::{Group, Member, groups};
 
+/// A group with fewer duplicated lines than this is not an area: a pair of ten-line functions is
+/// in `similar` and can be asked for, but a list of hundreds of such pairs buries the groups worth
+/// a look. It keeps a pair of dozen-line test bodies and drops the helper-sized look-alikes.
+pub(crate) const DUPLICATED_LINES_MIN: u32 = 12;
+
 pub struct Duplication;
 
 impl Detector for Duplication {
@@ -24,6 +29,7 @@ impl Detector for Duplication {
     fn detect(&self, context: &Context) -> Result<Vec<Finding>, QueryError> {
         Ok(groups(context.index)?
             .iter()
+            .filter(|group| group.lines_duplicated() >= DUPLICATED_LINES_MIN)
             .flat_map(findings_of)
             .collect())
     }

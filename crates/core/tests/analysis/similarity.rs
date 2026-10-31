@@ -34,6 +34,22 @@ const DRAIN: &str = "fn drain(queue: &mut Vec<Job>, limit: usize) -> Option<Job>
 }
 ";
 
+/// How many pairs the index under `root` holds.
+pub fn pair_count(root: &std::path::Path) -> usize {
+    pairs(root).len()
+}
+
+/// A `match` table turning an enum into strings: the shape is the same whatever the enum.
+fn table(function: &str, kind: &str, variants: [&str; 6]) -> String {
+    let arms: String = variants
+        .iter()
+        .map(|v| format!("        {kind}::{v} => \"{}\",\n", v.to_lowercase()))
+        .collect();
+    format!(
+        "pub const fn {function}(self) -> &'static str {{\n    match self {{\n{arms}    }}\n}}\n"
+    )
+}
+
 /// Every pair as (path of a, path of b, kind), in a stable order.
 fn pairs(root: &std::path::Path) -> Vec<(String, String, String, f64)> {
     let connection = Connection::open(root.join(".codemap/index.duckdb")).unwrap();
@@ -86,6 +102,22 @@ fn a_renamed_copy_is_a_near_pair() {
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].2, "near");
     assert!(found[0].3 >= 0.8);
+}
+
+#[test]
+fn tables_over_different_names_are_not_paired_but_a_renamed_copy_is() {
+    let letters = ["A", "B", "C", "D", "E", "F"];
+    let animals = ["Cat", "Dog", "Eel", "Fox", "Gnu", "Hen"];
+    let found = pairs_of(&[
+        ("src/a.rs", &table("name", "Letter", letters)),
+        ("src/b.rs", &table("as_str", "Animal", animals)),
+    ]);
+    assert!(found.is_empty(), "{found:?}");
+    let same = pairs_of(&[
+        ("src/a.rs", &table("name", "Animal", animals)),
+        ("src/b.rs", &table("label", "Animal", animals)),
+    ]);
+    assert_eq!(same.len(), 1);
 }
 
 #[test]

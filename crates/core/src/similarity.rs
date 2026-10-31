@@ -5,7 +5,8 @@
 //! pairs of score 1. One member of each group then stands for it in the near search: `MinHash`
 //! signatures are cut into bands, functions that agree on a whole band are candidates (LSH), and a
 //! candidate pair is a near pair when its estimated Jaccard similarity reaches
-//! [`NEAR_JACCARD_MIN`]. A pair whose functions are already connected is skipped, so `similar`
+//! [`NEAR_JACCARD_MIN`] and its identifiers as written overlap by at least [`IDENT_JACCARD_MIN`].
+//! A pair whose functions are already connected is skipped, so `similar`
 //! holds enough pairs to connect every cluster rather than every pair inside it, and a bucket of
 //! thousands of look-alikes costs a pass, not a square.
 //!
@@ -17,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use codemap_lang::Role;
 use duckdb::params;
 
-use crate::fingerprint::{MINHASH_LEN, jaccard};
+use crate::fingerprint::{IDENT_LEN, MINHASH_LEN, jaccard};
 use crate::reader::{Index, QueryError};
 
 /// Estimated Jaccard similarity of the abstracted shingles at which two functions are near
@@ -25,6 +26,13 @@ use crate::reader::{Index, QueryError};
 /// function of a few dozen lines keeps it above this, while functions that merely share a shape
 /// stay well below.
 pub(crate) const NEAR_JACCARD_MIN: f64 = 0.8;
+
+/// Estimated Jaccard similarity of the identifiers as written that a near pair must also reach.
+/// Abstraction makes tables over different names look alike (a dozen `match` functions turning
+/// different enums into strings); the names they use are what tells them apart. A renamed copy
+/// keeps its callees, fields and types, so it stays well above this, and unrelated functions sit
+/// near zero. Low, because a copy may rename most of its locals.
+pub(crate) const IDENT_JACCARD_MIN: f64 = 0.25;
 
 /// Hashes per band. With [`MINHASH_LEN`] hashes this makes 16 bands (see `MINHASH_LEN`).
 const BAND_ROWS: usize = 4;
@@ -40,6 +48,7 @@ struct Entry {
     end_line: u32,
     exact: u64,
     minhash: [u32; MINHASH_LEN],
+    idents: [u32; IDENT_LEN],
 }
 
 impl Entry {
@@ -53,7 +62,7 @@ impl Entry {
 
 fn load(index: &Index) -> Result<Vec<Entry>, QueryError> {
     let mut statement = index.store().connection().prepare(&format!(
-        "SELECT s.id, s.path, s.start_line, s.end_line, s.exact_hash, s.minhash
+        "SELECT s.id, s.path, s.start_line, s.end_line, s.exact_hash, s.minhash, s.idents
          FROM symbols s JOIN lines l ON l.path = s.path AND l.line = s.start_line
          WHERE s.exact_hash IS NOT NULL AND l.role NOT IN ('{}', '{}')
          ORDER BY s.path, s.start_line, s.end_line DESC",
@@ -66,6 +75,11 @@ fn load(index: &Index) -> Result<Vec<Entry>, QueryError> {
         for (slot, chunk) in minhash.iter_mut().zip(bytes.as_chunks::<4>().0) {
             *slot = u32::from_le_bytes(*chunk);
         }
+        let bytes: Vec<u8> = row.get(6)?;
+        let mut idents = [0; IDENT_LEN];
+        for (slot, chunk) in idents.iter_mut().zip(bytes.as_chunks::<4>().0) {
+            *slot = u32::from_le_bytes(*chunk);
+        }
         Ok(Entry {
             id: row.get(0)?,
             path: row.get(1)?,
@@ -73,6 +87,7 @@ fn load(index: &Index) -> Result<Vec<Entry>, QueryError> {
             end_line: row.get(3)?,
             exact: row.get(4)?,
             minhash,
+            idents,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
@@ -142,7 +157,9 @@ fn join_bucket(
                 continue;
             }
             let score = jaccard(&entries[anchor].minhash, &entries[later].minhash);
-            if score >= NEAR_JACCARD_MIN {
+            if score >= NEAR_JACCARD_MIN
+                && jaccard(&entries[anchor].idents, &entries[later].idents) >= IDENT_JACCARD_MIN
+            {
                 components.join(anchor, later);
                 pairs.push((anchor, later, NEAR, score));
             }

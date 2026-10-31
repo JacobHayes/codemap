@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS lines (
 CREATE TABLE IF NOT EXISTS symbols (
     id VARCHAR, path VARCHAR, name VARCHAR, kind VARCHAR, parent VARCHAR,
     start_line UINTEGER, end_line UINTEGER, content_hash VARCHAR,
-    exact_hash UBIGINT, minhash BLOB);
+    exact_hash UBIGINT, minhash BLOB, idents BLOB);
 CREATE TABLE IF NOT EXISTS refs (
     path VARCHAR, line UINTEGER, name VARCHAR, kind VARCHAR, symbol VARCHAR);
 CREATE TABLE IF NOT EXISTS \"similar\" (a VARCHAR, b VARCHAR, kind VARCHAR, score DOUBLE);
@@ -218,7 +218,11 @@ impl Store {
                     symbol
                         .fingerprint
                         .as_ref()
-                        .map(|f| minhash_bytes(&f.minhash))
+                        .map(|f| minhash_bytes(&f.minhash)),
+                    symbol
+                        .fingerprint
+                        .as_ref()
+                        .map(|f| minhash_bytes(&f.idents))
                 ])?;
             }
             for reference in &facts.refs {

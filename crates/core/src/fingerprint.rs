@@ -4,7 +4,10 @@
 //! hashes every token as written. The *near* signature is a `MinHash` over shingles (runs of
 //! consecutive tokens) of an abstracted stream in which identifiers and literals are placeholders,
 //! so a renamed copy, or one with other constants, still matches. Operators, keywords and
-//! punctuation stay, so different logic does not. All of it works on node kinds and text, so no
+//! punctuation stay, so different logic does not. A second, short `MinHash` over the identifiers
+//! as written lets a pair be checked for names in common, which abstraction alone cannot see: a
+//! renamed copy still calls the same functions and reads the same fields, while a table over
+//! other names does not. All of it works on node kinds and text, so no
 //! language contributes code.
 
 use std::collections::BTreeMap;
@@ -16,6 +19,10 @@ use codemap_lang::{Kind, LANGUAGES, Language, Node};
 /// Jaccard 0.8 shares a band above 99.9% and that a pair at 0.3 does at about 12%, which the
 /// confirmation step then discards.
 pub const MINHASH_LEN: usize = 64;
+
+/// Hashes in the identifier signature. It only has to tell "some names in common" from "none", at
+/// [`crate::similarity::IDENT_JACCARD_MIN`], so it is shorter than the shingle signature.
+pub const IDENT_LEN: usize = 32;
 
 /// Leaf tokens in one shingle. Shorter runs match unrelated code that only shares punctuation;
 /// longer ones make one edit break many shingles.
@@ -78,6 +85,8 @@ pub struct Fingerprint {
     pub exact: u64,
     /// One minimum per hash function over the shingles of the abstracted stream.
     pub minhash: [u32; MINHASH_LEN],
+    /// One minimum per hash function over the distinct identifiers as written.
+    pub idents: [u32; IDENT_LEN],
 }
 
 /// A fixed, well-mixed 64-bit permutation (the `SplitMix64` finalizer).
@@ -100,10 +109,10 @@ const SEEDS: [u64; MINHASH_LEN] = {
 
 /// The share of hashes two signatures agree on: an estimate of the Jaccard similarity of the
 /// shingle sets they summarise.
-pub(crate) fn jaccard(a: &[u32; MINHASH_LEN], b: &[u32; MINHASH_LEN]) -> f64 {
+pub(crate) fn jaccard(a: &[u32], b: &[u32]) -> f64 {
     let equal = a.iter().zip(b).filter(|(x, y)| x == y).count();
     f64::from(u32::try_from(equal).unwrap_or(u32::MAX))
-        / f64::from(u32::try_from(MINHASH_LEN).unwrap_or(u32::MAX))
+        / f64::from(u32::try_from(a.len().max(1)).unwrap_or(u32::MAX))
 }
 
 /// FNV-1a over bytes: cheap, and stable across runs and platforms.
@@ -113,13 +122,15 @@ fn hash_bytes(bytes: &[u8]) -> u64 {
     })
 }
 
-/// The leaf tokens of a function as (written, abstracted) hashes.
-fn tokens(
-    language: &Language,
-    root: &Node,
-    source: &[u8],
-    kinds: &[Option<Kind>],
-) -> Vec<(u64, u64)> {
+/// A leaf token: its written and abstracted hashes, and the hash of its text when an identifier.
+struct Token {
+    written: u64,
+    abstracted: u64,
+    name: Option<u64>,
+}
+
+/// The leaf tokens of a function.
+fn tokens(language: &Language, root: &Node, source: &[u8], kinds: &[Option<Kind>]) -> Vec<Token> {
     let classes = &CLASSES[language.name];
     let mut out = Vec::new();
     let mut cursor = root.walk();
@@ -131,12 +142,17 @@ fn tokens(
         if leaf && !comment {
             let text = hash_bytes(&source[node.start_byte()..node.end_byte()]);
             let written = mix(text ^ ((id as u64) << 48));
-            let abstracted = match classes.get(id).copied().unwrap_or(Class::Other) {
+            let class = classes.get(id).copied().unwrap_or(Class::Other);
+            let abstracted = match class {
                 Class::Identifier => 1,
                 Class::Literal => 2,
                 Class::Other => mix(text) | 4,
             };
-            out.push((written, abstracted));
+            out.push(Token {
+                written,
+                abstracted,
+                name: (class == Class::Identifier).then_some(text),
+            });
         }
         if !leaf && !comment && cursor.goto_first_child() {
             continue;
@@ -166,20 +182,32 @@ pub(crate) fn fingerprint(
     if tokens.len() < TOKENS_MIN {
         return None;
     }
-    let exact = tokens.iter().fold(0_u64, |hash, &(written, _)| {
-        mix(hash.rotate_left(7) ^ written)
-    });
+    let exact = tokens.iter().fold(
+        0_u64,
+        |hash, token| mix(hash.rotate_left(7) ^ token.written),
+    );
     let mut minhash = [u32::MAX; MINHASH_LEN];
     for window in tokens.windows(SHINGLE_WIDTH) {
-        let shingle = window.iter().fold(0_u64, |hash, &(_, abstracted)| {
-            mix(hash.rotate_left(11) ^ abstracted)
+        let shingle = window.iter().fold(0_u64, |hash, token| {
+            mix(hash.rotate_left(11) ^ token.abstracted)
         });
         for (slot, seed) in minhash.iter_mut().zip(SEEDS) {
             let value = u32::try_from(mix(shingle ^ seed) >> 32).unwrap_or(u32::MAX);
             *slot = (*slot).min(value);
         }
     }
-    Some(Fingerprint { exact, minhash })
+    let mut idents = [u32::MAX; IDENT_LEN];
+    for name in tokens.iter().filter_map(|token| token.name) {
+        for (slot, seed) in idents.iter_mut().zip(SEEDS) {
+            let value = u32::try_from(mix(name ^ seed) >> 32).unwrap_or(u32::MAX);
+            *slot = (*slot).min(value);
+        }
+    }
+    Some(Fingerprint {
+        exact,
+        minhash,
+        idents,
+    })
 }
 
 #[cfg(test)]
