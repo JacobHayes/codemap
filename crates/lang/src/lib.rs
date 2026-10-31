@@ -1,8 +1,10 @@
 //! Grammars and their node-kind tables. A [`Language`] is data: the generic extractor in
 //! `codemap-core` reads it and no language has code of its own beyond a small `mark` function.
 
+mod javascript;
 mod python;
 mod rust;
+mod typescript;
 
 pub use tree_sitter::Node;
 
@@ -150,7 +152,13 @@ pub struct Language {
 }
 
 /// Every shipped language: one registry line each.
-pub static LANGUAGES: &[&Language] = &[&rust::RUST, &python::PYTHON];
+pub static LANGUAGES: &[&Language] = &[
+    &rust::RUST,
+    &python::PYTHON,
+    &javascript::JAVASCRIPT,
+    &typescript::TYPESCRIPT,
+    &typescript::TSX,
+];
 
 /// The language for a path, by extension.
 #[must_use]

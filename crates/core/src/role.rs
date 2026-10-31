@@ -18,6 +18,7 @@ const TEST_DIRS: &[&str] = &[
     "fixtures",
     "testdata",
     "__snapshots__",
+    "e2e",
 ];
 const BENCH_DIRS: &[&str] = &["benches", "bench", "benchmarks"];
 const EXAMPLE_DIRS: &[&str] = &["examples", "example"];
