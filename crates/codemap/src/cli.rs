@@ -8,7 +8,7 @@ use clap::{Args, Parser, Subcommand};
 use codemap_core::{Answer, Envelope, Index, Query, answer, index};
 
 use crate::args::{AreaArgs, AreasArgs, SourceArgs, TreeArgs, XtabArgs};
-use crate::{render, serve};
+use crate::{mcp, render, serve};
 
 #[derive(Debug, Parser)]
 #[command(version, about = "A profiler for code mass and structure")]
@@ -75,6 +75,12 @@ enum Command {
     },
     /// Dimensions, measures and detectors available.
     Catalog(Output),
+    /// Serve every query as an MCP tool on stdin and stdout.
+    Mcp {
+        /// Root of the codebase.
+        #[arg(long, short = 'C', default_value = ".")]
+        root: PathBuf,
+    },
     /// Serve the web UI and the query API.
     Serve {
         /// Root of the codebase.
@@ -86,7 +92,7 @@ enum Command {
     },
 }
 
-type Failure = Box<dyn std::error::Error>;
+pub(crate) type Failure = Box<dyn std::error::Error>;
 
 /// Parses the command line and runs it.
 #[must_use]
@@ -117,6 +123,7 @@ fn dispatch(command: Command) -> Result<(), Failure> {
             println!("{}", semantic.summary());
             Ok(())
         }
+        Command::Mcp { root } => Ok(mcp::run(&root)?),
         Command::Serve { root, port } => Ok(serve::run(&root, port)?),
         Command::Overview(output) => ask(&output, &Query::Overview),
         Command::Catalog(output) => ask(&output, &Query::Catalog),
@@ -139,7 +146,7 @@ fn ask(output: &Output, query: &Query) -> Result<(), Failure> {
     Ok(())
 }
 
-fn answer_at(root: &Path, query: &Query) -> Result<Answer, Failure> {
+pub(crate) fn answer_at(root: &Path, query: &Query) -> Result<Answer, Failure> {
     index(root)?;
     Ok(answer(&Index::open(root)?, query)?)
 }

@@ -3,12 +3,25 @@
 
 use clap::{Args, ValueEnum};
 use codemap_core::{Axis, Filter, Hierarchy, MeasureRef, Query};
+use rmcp::schemars::JsonSchema;
+use serde::Deserialize;
 
 /// How many areas `areas` lists unless told otherwise.
 pub const TOP_DEFAULT: u32 = 20;
+/// The measure a tile or cell is sized by unless told otherwise.
+const MEASURE_DEFAULT: &str = "lines";
+
+fn measure_default() -> String {
+    MEASURE_DEFAULT.to_owned()
+}
+
+fn top_default() -> u32 {
+    TOP_DEFAULT
+}
 
 /// Narrows lines on any dimension.
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 pub struct FilterArgs {
     /// Only this file or directory.
     #[arg(long)]
@@ -36,19 +49,25 @@ impl FilterArgs {
     }
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, Default, ValueEnum, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(crate = "rmcp::schemars")]
 pub enum By {
+    #[default]
     Path,
     Symbol,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 pub struct TreeArgs {
     /// Group by directory and file, or by file and symbol.
     #[arg(long, value_enum, default_value = "path")]
+    #[serde(default)]
     pub by: By,
     /// Size measure, a sum from the catalog.
-    #[arg(long, default_value = "lines")]
+    #[arg(long, default_value = MEASURE_DEFAULT)]
+    #[serde(default = "measure_default")]
     pub size: String,
     /// Colour measure from the catalog.
     #[arg(long)]
@@ -57,6 +76,7 @@ pub struct TreeArgs {
     #[arg(long)]
     pub depth: Option<u32>,
     #[command(flatten)]
+    #[serde(flatten)]
     pub filter: FilterArgs,
 }
 
@@ -76,7 +96,9 @@ impl TreeArgs {
     }
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(crate = "rmcp::schemars")]
 pub enum AxisArg {
     Role,
     Concern,
@@ -85,7 +107,8 @@ pub enum AxisArg {
     Path,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 pub struct XtabArgs {
     /// Dimension down the side.
     #[arg(long, value_enum)]
@@ -94,12 +117,14 @@ pub struct XtabArgs {
     #[arg(long, value_enum)]
     pub cols: AxisArg,
     /// Measure per cell, a sum from the catalog.
-    #[arg(long, default_value = "lines")]
+    #[arg(long, default_value = MEASURE_DEFAULT)]
+    #[serde(default = "measure_default")]
     pub measure: String,
     /// Path components kept when a dimension is `path`.
     #[arg(long)]
     pub path_depth: Option<u32>,
     #[command(flatten)]
+    #[serde(flatten)]
     pub filter: FilterArgs,
 }
 
@@ -123,7 +148,8 @@ impl XtabArgs {
     }
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 pub struct SourceArgs {
     /// File path relative to the root.
     pub path: String,
@@ -162,10 +188,12 @@ impl SourceArgs {
     }
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 pub struct AreasArgs {
     /// How many to list.
     #[arg(long, default_value_t = TOP_DEFAULT)]
+    #[serde(default = "top_default")]
     pub top: u32,
     /// Only areas at or under this path.
     #[arg(long)]
@@ -186,7 +214,8 @@ impl AreasArgs {
     }
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 pub struct AreaArgs {
     /// A file or directory path, as `areas` prints it.
     pub subject: String,

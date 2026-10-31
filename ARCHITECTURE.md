@@ -242,7 +242,7 @@ surfaces cannot drift.
 | `Xtab` | Two dimensions crossed, one measure per cell, under filters |
 | `Areas` | Ranked areas, top N, under filters |
 | `Area` | One area: findings, measures, evidence, related areas |
-| `Source` | One file's lines with syntax highlighting and finding ranges |
+| `Source` | One file's lines (a page at a time) with role, concern and finding ranges; the text is read from the file and refused when it changed since indexing |
 | `Catalog` | Dimensions, measures and detectors available |
 
 - **CLI.** A verb per query (`codemap overview`, `codemap areas --top 20`, `codemap xtab --rows

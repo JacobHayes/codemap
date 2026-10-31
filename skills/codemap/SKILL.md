@@ -8,8 +8,10 @@ description: Find where a codebase carries accidental complexity (outsized files
 codemap indexes a codebase and ranks areas worth a closer look. It points; it does not
 diagnose. You investigate each area with your own tools and decide whether it is a problem.
 It never runs the code and is not part of the edit loop. The query commands used here
-(`overview`, `tree`, `areas`, `area`) run from the project root, or take `-C <root>`, and
-take `--json` for the structured answer; use it when you will process the output.
+(`overview`, `tree`, `xtab`, `areas`, `area`, `source`) run from the project root, or take `-C <root>`, and
+take `--json` for the structured answer; use it when you will process the output. If your
+client speaks MCP, `codemap mcp` serves the same queries as tools (overview, tree, xtab, areas,
+area, source, catalog) with the same arguments and answers.
 
 ## 1. Setup (first run in a project)
 
@@ -54,6 +56,10 @@ your session.
    detectors, measures and dimensions.
 2. `codemap area <subject> --json`: the findings, evidence (line ranges) and related areas
    for one file or directory exactly as `areas` printed it.
+   `codemap source <path> --lines a-b` shows those lines with role, concern and the findings
+   touching them (long files come in pages; it says how to ask for the next).
+   `codemap xtab --rows role --cols concern` crosses two dimensions (role, concern, language,
+   kind, path) with a measure per cell, to see composition at a glance.
 3. Read the evidence with your own tools; a duplication finding lists every copy, so open each
    and compare. Ask: is this mass needed? Is the same idea built
    twice? Are there layers that only pass through? Is the handling or testing out of

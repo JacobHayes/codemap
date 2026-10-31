@@ -2,6 +2,7 @@
 
 mod args;
 mod cli;
+mod mcp;
 mod render;
 mod serve;
 mod watch;
