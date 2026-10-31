@@ -64,7 +64,7 @@ function Body({ xtab, state, navigate, catalog }: BodyProps) {
           y={pointed.y}
           title={`${pointed.row} and ${pointed.col}`}
           lines={[exactAmount(pointed.value, xtab.measure.unit)]}
-          hint="Click to filter to both"
+          hint="Click to show these on the map"
           onDismiss={() => {
             setPointed(null);
           }}

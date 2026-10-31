@@ -21,7 +21,8 @@ export const XTAB_COLS_MAX = 24;
 /** A cell the pointer or the keyboard is on, and where. */
 export type CellPoint = { row: string; col: string; value: number; x: number; y: number };
 
-/** The cell's dimension values as filters; a path value drills there. */
+/** The cell's dimension values as filters; a path value drills there. The cell opens the map: a
+ * grid filtered by both of its values would be a single cell. */
 function filterPatch(axis: Axis, value: string): Partial<UrlState> {
   return axis === 'path' ? { path: value } : { [axis]: value };
 }
@@ -64,7 +65,7 @@ function Cell({ cell, rows, names, unit, paint, onPick, onPoint }: CellProps) {
         <button
           data-row={rows[0]}
           data-col={rows[1]}
-          aria-label={`${compact(cell.value)}, ${exactAmount(cell.value, unit)} in ${names[0]} and ${names[1]}. Filter to these`}
+          aria-label={`${compact(cell.value)}, ${exactAmount(cell.value, unit)} in ${names[0]} and ${names[1]}. Show these on the map`}
           onClick={onPick}
           onMouseEnter={(e) => {
             point(e.currentTarget);
@@ -180,6 +181,7 @@ export function XtabGrid({ xtab, swatches, neutral, navigate, onPoint, onUp }: G
                     navigate({
                       ...filterPatch(xtab.rowAxis, row.name),
                       ...filterPatch(xtab.colAxis, col.name),
+                      view: 'map',
                       selected: null,
                     });
                   }}

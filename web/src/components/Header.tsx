@@ -155,7 +155,7 @@ function FilterBar({ state, navigate, catalog, hidden }: Omit<HeaderProps, 'area
           <optgroup key={name} label={capital(name)}>
             {values.map((value) => (
               <option key={value} value={`${name}=${value}`}>
-                {value}
+                {`${name}: ${value}`}
               </option>
             ))}
           </optgroup>

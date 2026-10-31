@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures';
 
-test('a cell filters to both of its values and the totals follow', async ({ page }) => {
+test('a cell opens the map filtered to both of its values', async ({ page }) => {
   await page.goto('/?view=xtab');
   const grid = page.getByRole('table');
   await expect(grid).toBeVisible();
@@ -9,8 +9,8 @@ test('a cell filters to both of its values and the totals follow', async ({ page
   const params = new URL(page.url()).searchParams;
   expect(params.get('role')).not.toBeNull();
   expect(params.get('concern')).not.toBeNull();
-  expect(params.get('view')).toBe('xtab');
-  await expect(grid.getByRole('row')).toHaveCount(3);
+  expect(params.get('view')).toBeNull();
+  await expect(grid).toBeHidden();
 });
 
 test('the pickers choose the dimensions and the address remembers them', async ({ page }) => {
