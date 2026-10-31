@@ -13,5 +13,6 @@ mod common;
 mod detectors;
 mod duplication;
 mod indirection;
+mod parallel;
 mod queries;
 mod similarity;
