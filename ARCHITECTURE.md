@@ -128,7 +128,9 @@ erDiagram
 - **`labels`** and **`measures`** (subject, key, value) are open tables: an analysis adds a
   dimension or measure by writing rows, not columns.
 - **`findings`** and **`areas`**: see Detectors.
-- **`answers`**: the inference cache, keyed by content hash, model and prompt version.
+- **`embeddings`** and **`answers`**: the inference cache. A vector is keyed by content hash and
+  model; a decision model's answer by the two content hashes (ordered), model and prompt
+  version. Neither is derived from the build, so they survive a re-extract.
 
 Hierarchical dimensions (path, symbol nesting) are paths, so grouping at any depth is a prefix.
 
@@ -215,8 +217,16 @@ Deterministic analyses always run. Analyses that need a model run when one is co
 - **LLMs** do what needs words: naming a cluster, saying why an area stands out.
 
 Decision models and LLMs are traits, each with two vendors' APIs. Embeddings use one
-OpenAI-compatible client, which most embedding providers speak. Tests seed the `answers` table
-instead of mocking a client.
+OpenAI-compatible client, which most embedding providers speak. Tests seed the `embeddings` and
+`answers` tables instead of mocking a client.
+
+Semantic duplication runs after the deterministic analyses have committed, outside their
+transaction, and only when `[inference]` names both models and the environment holds the key;
+otherwise `codemap index` says in one line that it is off and why. Candidates are the nearest
+neighbours of each function above a similarity floor, minus pairs already connected, strongest
+first and within a per-run call budget; what the budget leaves is asked on later runs. A
+confirmed pair joins the clusters of exact and near copies, and the findings say the group was
+found by meaning. A model API that fails leaves the deterministic results standing.
 
 ## Query layer and surfaces
 
@@ -269,7 +279,9 @@ breadcrumbs, tables, panels); views that draw many marks are framework-free canv
 ## Configuration
 
 - **`.codemap/config.toml`** holds project facts: role overrides by glob, named measures,
-  rules, acknowledgements and model choices. It is optional and committed with the project.
+  rules, acknowledgements and model choices (`[inference]`: the embedding and decision models,
+  the API's base URL, and the name of the environment variable that holds its key). It is
+  optional and committed with the project.
 - **Flags** cover only the invocation: what to show, where to listen.
 - **Environment** holds only API keys.
 

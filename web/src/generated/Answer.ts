@@ -124,7 +124,12 @@ acknowledged: string | null, };
  */
 export type MeasureDef = { name: string, description: string, measure: Measure, };
 
-export type Overview = { totals: Totals, byRole: Array<Share>, byConcern: Array<Share>, byLanguage: Array<Share>, areas: AreaCounts, };
+export type Overview = { totals: Totals, byRole: Array<Share>, byConcern: Array<Share>, byLanguage: Array<Share>, areas: AreaCounts, 
+/**
+ * What the analysis that needs models did, in plain words: off and why, waiting, failed, or
+ * what it found.
+ */
+semantic: string, };
 
 /**
  * What the legend needs: the measure, the range, and where each bin starts.

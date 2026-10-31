@@ -142,6 +142,9 @@ fn overview_text(overview: &Overview) -> String {
         &[("detector", Align::Left), ("areas", Align::Right)],
         &rows,
     ));
+    out.push('\n');
+    out.push_str(&overview.semantic);
+    out.push('\n');
     out
 }
 

@@ -6,7 +6,7 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use codemap_core::{Index, IndexError, IndexReport, is_config, is_indexed};
+use codemap_core::{Index, IndexError, IndexReport, SemanticStatus, is_config, is_indexed};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
 
 /// How long the tree must be quiet before it is re-indexed. An editor save, a formatter run or a
@@ -31,6 +31,9 @@ pub struct Watcher {
 
 /// Refreshes `index`, then watches its root and, after each quiet period that follows a change
 /// to an indexed file or the config, refreshes it again and calls `refreshed` with the outcome.
+/// After each refresh the analysis that needs models runs on its own thread, one run at a time:
+/// it never delays a refresh, a refresh that commits meanwhile supersedes it, and `semantic_done`
+/// hears of each run that finished.
 /// Watching starts before the first refresh, and changes that arrive during a refresh queue up
 /// and trigger the next one, so no change is missed.
 ///
@@ -39,6 +42,7 @@ pub struct Watcher {
 pub fn watch(
     index: Index,
     refreshed: impl Fn(Result<IndexReport, IndexError>) + Send + 'static,
+    semantic_done: impl Fn(Result<SemanticStatus, IndexError>) + Send + 'static,
 ) -> Result<Watcher, WatchError> {
     // Events carry the path the watch was registered under, so match against the same one.
     let root = fs::canonicalize(index.root()).map_err(|source| WatchError::Resolve {
@@ -59,7 +63,18 @@ pub fn watch(
         path: root.display().to_string(),
         source,
     })?;
+    let (due, queued) = mpsc::channel::<()>();
+    let semantic_index = index.try_clone().map_err(IndexError::from)?;
+    thread::spawn(move || {
+        while queued.recv().is_ok() {
+            // Runs queued while one was going are covered by the next.
+            while queued.try_recv().is_ok() {}
+            semantic_done(semantic_index.refresh_semantic());
+        }
+    });
     index.refresh()?;
+    // The worker is gone only when the watcher is being dropped.
+    let _ = due.send(());
     let quiet_period = Duration::from_millis(QUIET_PERIOD_MS);
     let is_relevant = {
         let root = root.clone();
@@ -90,7 +105,12 @@ pub fn watch(
                     Err(RecvTimeoutError::Disconnected) => return,
                 }
             }
-            refreshed(index.refresh());
+            let result = index.refresh();
+            let succeeded = result.is_ok();
+            refreshed(result);
+            if succeeded {
+                let _ = due.send(());
+            }
         }
     });
     Ok(Watcher { _watcher: watcher })

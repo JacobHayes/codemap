@@ -10,6 +10,9 @@
 //! holds enough pairs to connect every cluster rather than every pair inside it, and a bucket of
 //! thousands of look-alikes costs a pass, not a square.
 //!
+//! The semantic analysis ([`crate::semantic`]) later adds pairs of kind `semantic` for functions
+//! that do the same thing in different words.
+//!
 //! The population is functions and tests outside generated and vendored code: nobody can cut
 //! those by editing them.
 
@@ -20,6 +23,7 @@ use duckdb::params;
 
 use crate::fingerprint::{IDENT_LEN, MINHASH_LEN, jaccard};
 use crate::reader::{Index, QueryError};
+use crate::semantic::SEMANTIC;
 
 /// Estimated Jaccard similarity of the abstracted shingles at which two functions are near
 /// copies. Renaming and changing constants leaves it at 1; a handful of edited lines in a
@@ -39,6 +43,16 @@ const BAND_ROWS: usize = 4;
 
 pub(crate) const EXACT: &str = "exact";
 pub(crate) const NEAR: &str = "near";
+
+/// The `WHERE` clause over `symbols s` and `lines l` (the line the symbol starts on) that selects
+/// the population: fingerprinted functions outside generated and vendored code.
+pub(crate) fn eligible_filter() -> String {
+    format!(
+        "s.exact_hash IS NOT NULL AND l.role NOT IN ('{}', '{}')",
+        Role::Generated.as_str(),
+        Role::Vendored.as_str()
+    )
+}
 
 /// A fingerprinted function.
 struct Entry {
@@ -64,10 +78,9 @@ fn load(index: &Index) -> Result<Vec<Entry>, QueryError> {
     let mut statement = index.store().connection().prepare(&format!(
         "SELECT s.id, s.path, s.start_line, s.end_line, s.exact_hash, s.minhash, s.idents
          FROM symbols s JOIN lines l ON l.path = s.path AND l.line = s.start_line
-         WHERE s.exact_hash IS NOT NULL AND l.role NOT IN ('{}', '{}')
+         WHERE {}
          ORDER BY s.path, s.start_line, s.end_line DESC",
-        Role::Generated.as_str(),
-        Role::Vendored.as_str()
+        eligible_filter()
     ))?;
     let rows = statement.query_map([], |row| {
         let bytes: Vec<u8> = row.get(5)?;
@@ -94,26 +107,41 @@ fn load(index: &Index) -> Result<Vec<Entry>, QueryError> {
 }
 
 /// Disjoint sets with path halving.
-struct Components(Vec<usize>);
+pub(crate) struct Components {
+    parent: Vec<usize>,
+    /// Members of each set, at its root.
+    size: Vec<usize>,
+}
 
 impl Components {
-    fn new(size: usize) -> Self {
-        Self((0..size).collect())
+    pub(crate) fn new(size: usize) -> Self {
+        Self {
+            parent: (0..size).collect(),
+            size: vec![1; size],
+        }
     }
 
-    fn find(&mut self, mut item: usize) -> usize {
-        while self.0[item] != item {
-            self.0[item] = self.0[self.0[item]];
-            item = self.0[item];
+    pub(crate) fn find(&mut self, mut item: usize) -> usize {
+        while self.parent[item] != item {
+            self.parent[item] = self.parent[self.parent[item]];
+            item = self.parent[item];
         }
         item
     }
 
+    /// Members in the set holding `item`.
+    pub(crate) fn size_of(&mut self, item: usize) -> usize {
+        let root = self.find(item);
+        self.size[root]
+    }
+
     /// Joins two sets; false when they were one already.
-    fn join(&mut self, a: usize, b: usize) -> bool {
+    pub(crate) fn join(&mut self, a: usize, b: usize) -> bool {
         let (a, b) = (self.find(a), self.find(b));
         if a != b {
-            self.0[a.max(b)] = a.min(b);
+            let (root, child) = (a.min(b), a.max(b));
+            self.parent[child] = root;
+            self.size[root] += self.size[child];
         }
         a != b
     }
@@ -206,7 +234,7 @@ pub(crate) fn run(index: &Index) -> Result<(), QueryError> {
 
 /// Rewrites `duplicated`: the lines of every copy but the longest in each group, so that
 /// summing it counts the lines a group could do without once.
-fn write_duplicated(index: &Index) -> Result<(), QueryError> {
+pub(crate) fn write_duplicated(index: &Index) -> Result<(), QueryError> {
     let connection = index.store().connection();
     connection.execute_batch("DELETE FROM duplicated")?;
     let mut rows = connection.appender("duplicated")?;
@@ -252,8 +280,13 @@ pub(crate) struct Group {
     pub members: Vec<Member>,
     /// Every pair that holds the group together is exact.
     pub exact: bool,
+    /// Some pair that holds the group together was confirmed by a model, not by the text.
+    pub semantic: bool,
     /// The weakest pair's score.
     pub score_min: f64,
+    /// The weakest probability a model gave among the semantic pairs, if there are any: unlike
+    /// `score_min` it is never a text similarity.
+    pub model_score_min: Option<f64>,
 }
 
 impl Group {
@@ -336,7 +369,9 @@ pub(crate) fn groups(index: &Index) -> Result<Vec<Group>, QueryError> {
         let group = by_root.entry(components.find(position)).or_insert(Group {
             members: Vec::new(),
             exact: true,
+            semantic: false,
             score_min: 1.0,
+            model_score_min: None,
         });
         group.members.push(member);
     }
@@ -345,7 +380,11 @@ pub(crate) fn groups(index: &Index) -> Result<Vec<Group>, QueryError> {
             .get_mut(&components.find(place(a)))
             .expect("every paired function is in a group");
         group.exact &= kind == EXACT;
+        group.semantic |= kind == SEMANTIC;
         group.score_min = group.score_min.min(*score);
+        if kind == SEMANTIC {
+            group.model_score_min = Some(group.model_score_min.map_or(*score, |m| m.min(*score)));
+        }
     }
     let mut groups: Vec<Group> = by_root.into_values().collect();
     groups.sort_by(|a, b| {

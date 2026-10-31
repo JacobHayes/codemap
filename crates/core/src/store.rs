@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS edges (
     from_symbol VARCHAR, to_symbol VARCHAR, kind VARCHAR, confidence DOUBLE);
 CREATE TABLE IF NOT EXISTS measures (subject VARCHAR, key VARCHAR, value DOUBLE);
 CREATE TABLE IF NOT EXISTS \"similar\" (a VARCHAR, b VARCHAR, kind VARCHAR, score DOUBLE);
+CREATE TABLE IF NOT EXISTS embeddings (content_hash VARCHAR, model VARCHAR, vector BLOB);
+CREATE TABLE IF NOT EXISTS answers (
+    hash_a VARCHAR, hash_b VARCHAR, model VARCHAR, prompt VARCHAR, probability DOUBLE);
 CREATE TABLE IF NOT EXISTS duplicated (path VARCHAR, line UINTEGER);
 CREATE TABLE IF NOT EXISTS findings (
     detector VARCHAR, subject VARCHAR, subject_kind VARCHAR, area VARCHAR, reason VARCHAR,

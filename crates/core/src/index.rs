@@ -4,7 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::sync::atomic::Ordering;
 
+use duckdb::params;
 use ignore::WalkBuilder;
 use rayon::prelude::*;
 
@@ -12,6 +14,7 @@ use crate::config::{Config, ConfigError, RoleOverrides};
 use crate::detect::{detect, rank};
 use crate::facts::{FileFacts, TOKEN_ENCODING, extract};
 use crate::reader::{Index, QueryError};
+use crate::semantic::{self, SemanticStatus};
 use crate::store::{STATE_DIR, Store, StoreError};
 use crate::worktree::seed;
 use crate::{link, similarity};
@@ -41,7 +44,7 @@ pub enum IndexError {
 }
 
 /// What one run of [`index`] did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexReport {
     pub file_count: u64,
     pub line_count: u64,
@@ -56,7 +59,8 @@ struct Scanned {
     facts: Option<FileFacts>,
 }
 
-/// Brings the index under `root` up to date with the tree, creating it when missing.
+/// Brings the index under `root` up to date with the tree, creating it when missing. The analysis
+/// that needs models is a separate step ([`Index::refresh_semantic`]).
 ///
 /// # Errors
 /// Fails when the tree cannot be walked or read, or the index cannot be written.
@@ -122,6 +126,7 @@ impl Index {
                 .map(|file| file.path.as_str()),
         );
 
+        let writing = self.lock_writing();
         store.begin()?;
         let written = self.write(
             &scanned,
@@ -138,6 +143,10 @@ impl Index {
                 return Err(error);
             }
         }
+        // Before the lock is released, so a semantic run waiting for it sees it was superseded.
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        drop(writing);
+        self.note_semantic_pending(&config, &build_id)?;
         let (file_count, line_count) = store.totals()?;
         Ok(IndexReport {
             file_count,
@@ -175,6 +184,23 @@ impl Index {
 
     /// Runs the analyses, the detectors and ranking over the whole index, unless nothing they read has changed.
     fn analyse(&self, config: &Config, build_id: &str) -> Result<(), IndexError> {
+        let key = self.analysis_key(config, build_id)?;
+        if self.store().meta("analysis")?.as_deref() == Some(key.as_str()) {
+            return Ok(());
+        }
+        link::run(self)?;
+        similarity::run(self)?;
+        // Semantic pairs went with the old ones: they are due again.
+        self.store().set_meta("semantic", "")?;
+        let mut findings = detect(self, config)?;
+        let areas = rank(&mut findings, config);
+        self.save_analysis(&findings, &areas)?;
+        self.store().set_meta("analysis", &key)?;
+        Ok(())
+    }
+
+    /// Identifies everything the analyses read.
+    fn analysis_key(&self, config: &Config, build_id: &str) -> Result<String, IndexError> {
         let mut hasher = blake3::Hasher::new();
         hasher.update(build_id.as_bytes());
         hasher.update(config.text.as_bytes());
@@ -182,16 +208,102 @@ impl Index {
             hasher.update(path.as_bytes());
             hasher.update(hash.as_bytes());
         }
-        let key = hasher.finalize().to_hex().to_string();
-        if self.store().meta("analysis")?.as_deref() == Some(key.as_str()) {
-            return Ok(());
+        Ok(hasher.finalize().to_hex().to_string())
+    }
+
+    /// Records in plain words what the semantic analysis will do about this refresh, for the
+    /// overview: off and why, still due, or (left as it was) done for this very content.
+    fn note_semantic_pending(&self, config: &Config, build_id: &str) -> Result<(), IndexError> {
+        let status = if let Err(off) = semantic::setup(config) {
+            SemanticStatus::Off(off)
+        } else {
+            let key = self.analysis_key(config, build_id)?;
+            if self.store().meta("semantic")?.as_deref() == Some(key.as_str()) {
+                SemanticStatus::Unchanged
+            } else {
+                SemanticStatus::Pending
+            }
+        };
+        Ok(self
+            .store()
+            .set_meta("semantic_status", &status.summary())?)
+    }
+
+    /// Adds semantic pairs, when models are configured. It runs after a refresh has committed,
+    /// so the deterministic results are readable while models are slow, and a model API that
+    /// fails leaves them standing. A second, short transaction then folds the pairs into
+    /// `duplicated`, findings and areas. A refresh that commits meanwhile supersedes the run.
+    ///
+    /// # Errors
+    /// Fails when the index cannot be read or written; a model API that cannot be used is a
+    /// [`SemanticStatus::Failed`] result.
+    pub fn refresh_semantic(&self) -> Result<SemanticStatus, IndexError> {
+        let generation = self.generation.load(Ordering::SeqCst);
+        let cancelled = || self.generation.load(Ordering::SeqCst) != generation;
+        let config = Config::load(self.root())?;
+        let setup = match semantic::setup(&config) {
+            Ok(setup) => setup,
+            Err(off) => {
+                let status = SemanticStatus::Off(off);
+                self.store()
+                    .set_meta("semantic_status", &status.summary())?;
+                return Ok(status);
+            }
+        };
+        let build_id = build_id()?;
+        let key = self.analysis_key(&config, &build_id)?;
+        if self.store().meta("semantic")?.as_deref() == Some(key.as_str()) {
+            let status = SemanticStatus::Unchanged;
+            self.store()
+                .set_meta("semantic_status", &status.summary())?;
+            return Ok(status);
         }
-        link::run(self)?;
-        similarity::run(self)?;
+        let outcome = semantic::run(self, &setup, &cancelled)?;
+        if outcome.status == SemanticStatus::Superseded {
+            return Ok(outcome.status);
+        }
+        let store = self.store();
+        let writing = self.lock_writing();
+        if cancelled() {
+            return Ok(SemanticStatus::Superseded);
+        }
+        if !outcome.pairs.is_empty() {
+            store.begin()?;
+            let added = self.add_semantic(&config, &outcome.pairs);
+            if let Err(error) = added {
+                store.rollback()?;
+                return Err(error);
+            }
+            store.commit()?;
+        }
+        if outcome.complete {
+            store.set_meta("semantic", &key)?;
+        }
+        store.set_meta("semantic_status", &outcome.status.summary())?;
+        drop(writing);
+        Ok(outcome.status)
+    }
+
+    fn add_semantic(
+        &self,
+        config: &Config,
+        pairs: &[(String, String, f64)],
+    ) -> Result<(), IndexError> {
+        let mut rows = self
+            .store()
+            .connection()
+            .appender("similar")
+            .map_err(QueryError::from)?;
+        for (a, b, probability) in pairs {
+            rows.append_row(params![a, b, semantic::SEMANTIC, probability])
+                .map_err(QueryError::from)?;
+        }
+        rows.flush().map_err(QueryError::from)?;
+        drop(rows);
+        similarity::write_duplicated(self)?;
         let mut findings = detect(self, config)?;
         let areas = rank(&mut findings, config);
         self.save_analysis(&findings, &areas)?;
-        self.store().set_meta("analysis", &key)?;
         Ok(())
     }
 }

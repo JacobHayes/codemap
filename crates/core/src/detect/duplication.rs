@@ -1,4 +1,5 @@
-//! Duplication: functions and tests that are copies of each other, exactly or nearly.
+//! Duplication: functions and tests that are copies of each other, exactly or nearly, or that a
+//! model confirmed do the same thing.
 //!
 //! The similarity analysis pairs the copies; this detector reads each connected group as one
 //! observation. A group is a finding in every file that holds a member, so the file's area can
@@ -23,7 +24,7 @@ impl Detector for Duplication {
     }
 
     fn describe(&self) -> &'static str {
-        "Functions and tests copied exactly, or nearly once names and constants are ignored"
+        "Functions and tests copied exactly, or nearly once names and constants are ignored, or confirmed by a model to do the same thing"
     }
 
     fn detect(&self, context: &Context) -> Result<Vec<Finding>, QueryError> {
@@ -45,15 +46,21 @@ fn reason(group: &Group, noun: &str) -> String {
     } else {
         format!("{shortest} to {longest} line")
     };
+    let plural = if files == 1 { "" } else { "s" };
+    if group.semantic {
+        return format!(
+            "{} {noun}s that do the same thing in different words, in {files} file{plural}.",
+            group.members.len(),
+        );
+    }
     let (near, same) = if group.exact {
         ("", "the same")
     } else {
         ("near ", "a")
     };
     format!(
-        "{} {near}copies of {same} {size} {noun} in {files} file{}.",
+        "{} {near}copies of {same} {size} {noun} in {files} file{plural}.",
         group.members.len(),
-        if files == 1 { "" } else { "s" },
     )
 }
 
@@ -102,6 +109,11 @@ fn findings_of(group: &Group) -> Vec<Finding> {
             ))
             .fact(if group.exact {
                 "identical apart from whitespace and comments".to_owned()
+            } else if let Some(probability) = group.model_score_min {
+                format!(
+                    "a model judged the weakest semantic link at least {} likely to do the same thing",
+                    percent(probability)
+                )
             } else {
                 format!(
                     "at least {} alike once names and constants are ignored",
@@ -112,7 +124,12 @@ fn findings_of(group: &Group) -> Vec<Finding> {
             finding.labels.insert("kind".to_owned(), noun.to_owned());
             finding.labels.insert(
                 "match".to_owned(),
-                if group.exact { "exact" } else { "near" }.to_owned(),
+                match (group.exact, group.semantic) {
+                    (true, _) => "exact",
+                    (false, false) => "near",
+                    (false, true) => "semantic",
+                }
+                .to_owned(),
             );
             for member in &group.members {
                 finding = finding.evidence(&member.path, &[(member.start_line, member.end_line)]);

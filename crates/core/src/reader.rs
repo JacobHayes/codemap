@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, Mutex};
 
 use duckdb::params_from_iter;
 
@@ -61,6 +63,12 @@ pub struct SymbolRow {
 pub struct Index {
     store: Store,
     root: PathBuf,
+    /// Counts committed refreshes, shared by every clone: a semantic run that sees it change has
+    /// been superseded.
+    pub(crate) generation: Arc<AtomicU64>,
+    /// Held while writing the derived tables, so the semantic step's short write and a refresh
+    /// never overlap.
+    pub(crate) writing: Arc<Mutex<()>>,
 }
 
 impl Index {
@@ -82,14 +90,29 @@ impl Index {
     /// # Errors
     /// Fails when the database cannot hand out another connection.
     pub fn try_clone(&self) -> Result<Self, QueryError> {
-        Ok(Self::new(self.store.try_clone()?, &self.root))
+        Ok(Self {
+            store: self.store.try_clone()?,
+            root: self.root.clone(),
+            generation: Arc::clone(&self.generation),
+            writing: Arc::clone(&self.writing),
+        })
     }
 
     pub(crate) fn new(store: Store, root: &Path) -> Self {
         Self {
             store,
             root: root.to_owned(),
+            generation: Arc::new(AtomicU64::new(0)),
+            writing: Arc::new(Mutex::new(())),
         }
+    }
+
+    /// Takes the right to write the derived tables. A holder that panicked left nothing half
+    /// done (its transaction rolls back), so a poisoned lock is still good.
+    pub(crate) fn lock_writing(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.writing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     pub(crate) fn store(&self) -> &Store {

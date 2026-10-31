@@ -14,7 +14,9 @@ use axum::http::{StatusCode, Uri, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use codemap_core::{Envelope, Index, IndexError, Query, QueryError, Refresh, answer};
+use codemap_core::{
+    Envelope, Index, IndexError, Query, QueryError, Refresh, SemanticStatus, answer,
+};
 use rust_embed::Embed;
 use tokio::sync::watch;
 use tokio_stream::StreamExt as _;
@@ -63,11 +65,23 @@ impl Served {
         let index = Index::create(root)?;
         let revision = Arc::new(watch::channel(1).0);
         let announced = Arc::clone(&revision);
+        let announced_semantic = Arc::clone(&revision);
         let watcher = watch_tree(
             index.try_clone().map_err(IndexError::from)?,
             move |result| match result {
                 Ok(_) => announced.send_modify(|revision| *revision += 1),
                 Err(error) => eprintln!("codemap: re-index failed: {error}"),
+            },
+            move |result| match result {
+                // Nothing was written, or the run will be made again.
+                Ok(
+                    SemanticStatus::Off(_)
+                    | SemanticStatus::Unchanged
+                    | SemanticStatus::Pending
+                    | SemanticStatus::Superseded,
+                ) => {}
+                Ok(_) => announced_semantic.send_modify(|revision| *revision += 1),
+                Err(error) => eprintln!("codemap: semantic duplication failed: {error}"),
             },
         )?;
         Ok(Self {

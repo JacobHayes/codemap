@@ -123,7 +123,9 @@ fn dispatch(command: Command) -> Result<(), Failure> {
     match command {
         Command::Index { path } => {
             let started = Instant::now();
-            let report = index(&path)?;
+            let live = Index::create(&path)?;
+            let report = live.refresh()?;
+            let semantic = live.refresh_semantic()?;
             println!(
                 "{} files, {} lines, {} re-extracted, {:.2}s",
                 report.file_count,
@@ -131,6 +133,7 @@ fn dispatch(command: Command) -> Result<(), Failure> {
                 report.extracted_count,
                 started.elapsed().as_secs_f64()
             );
+            println!("{}", semantic.summary());
             Ok(())
         }
         Command::Serve { root, port } => Ok(serve::run(&root, port)?),

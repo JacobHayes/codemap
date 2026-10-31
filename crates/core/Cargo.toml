@@ -19,6 +19,7 @@ blake3.workspace = true
 ignore.workspace = true
 rayon.workspace = true
 tree-sitter.workspace = true
+ureq.workspace = true
 
 codemap-lang.workspace = true
 thiserror.workspace = true

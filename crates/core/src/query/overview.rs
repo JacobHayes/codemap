@@ -57,6 +57,9 @@ pub struct Overview {
     pub by_concern: Vec<Share>,
     pub by_language: Vec<Share>,
     pub areas: AreaCounts,
+    /// What the analysis that needs models did, in plain words: off and why, waiting, failed, or
+    /// what it found.
+    pub semantic: String,
 }
 
 /// Rounding is exact here: counts of lines are far below 2^53.
@@ -139,5 +142,6 @@ pub(crate) fn overview(index: &Index) -> Result<Overview, QueryError> {
                 .unwrap_or(u32::MAX),
             by_detector,
         },
+        semantic: index.store().meta("semantic_status")?.unwrap_or_default(),
     })
 }

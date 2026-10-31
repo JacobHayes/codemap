@@ -73,6 +73,31 @@ pub struct Acknowledgement {
     pub reason: String,
 }
 
+/// Where model calls go and which models answer: `[inference]`. Without it no analysis calls a
+/// model.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Inference {
+    /// The embedding model, as the provider names it.
+    pub embedding_model: String,
+    /// The model that confirms candidate pairs.
+    pub decision_model: String,
+    /// An OpenAI-compatible API, with no trailing slash.
+    #[serde(default = "default_base_url")]
+    pub base_url: String,
+    /// The environment variable holding the API key; the key itself never goes in the project.
+    #[serde(default = "default_api_key_env")]
+    pub api_key_env: String,
+}
+
+fn default_base_url() -> String {
+    "https://openrouter.ai/api/v1".to_owned()
+}
+
+fn default_api_key_env() -> String {
+    "OPENROUTER_API_KEY".to_owned()
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -83,6 +108,8 @@ pub struct Config {
     /// Gitignore-style glob to role name.
     #[serde(default)]
     pub roles: BTreeMap<String, String>,
+    /// Models for the analyses that need one; absent means none runs.
+    pub inference: Option<Inference>,
     /// The file's text, for change detection.
     #[serde(skip)]
     pub text: String,
