@@ -157,6 +157,10 @@ impl<'a> Grid<'a> {
 
     fn visit(&mut self, language: &Language, kinds: &[Option<Kind>], node: &Node, source: &[u8]) {
         let (first, last) = rows(node);
+        // A blank file's root starts on a row past its last line.
+        if first >= self.lines.len() {
+            return;
+        }
         if node.is_named() {
             self.node_count[first] += 1;
         }
@@ -405,4 +409,19 @@ fn shape_of(
         .then(|| shape::forwarded_callee(language, kinds, node, source))
         .flatten();
     (forwards, is_abstraction(language, kinds, node, source))
+}
+
+#[cfg(test)]
+mod tests {
+    use codemap_lang::language_for_path;
+
+    use super::*;
+
+    #[test]
+    fn a_blank_file_has_one_empty_line() {
+        let language = language_for_path("blank.js").expect("javascript is known");
+        let parsed = extract(language, "\n", Role::Prod).expect("parses");
+        assert_eq!(parsed.lines.len(), 1);
+        assert_eq!(parsed.symbols, Vec::new());
+    }
 }
