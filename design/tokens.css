@@ -1,0 +1,97 @@
+/* codemap design tokens (DESIGN.md). Light is canonical; dark follows the OS or data-theme="dark". A token that differs by theme is one declaration, light-dark(light, dark), resolved by the root's color-scheme. */
+:root {
+  /* The neutral ramp: OKLCH hue 250, chroma 0.004 (palest) rising to 0.032 at mid and settling at 0.012 at the dark end,
+     lightness stepping from 0.985 to 0.14. Both themes draw every neutral role from it (DESIGN.md, Tokens). */
+  --n-0: #f8fafd; /* L 0.985 C 0.004 */
+  --n-1: #f0f4f8; /* L 0.965 C 0.007 */
+  --n-2: #e6ecf2; /* L 0.94 C 0.01 */
+  --n-3: #dbe2e9; /* L 0.91 C 0.012 */
+  --n-4: #ced5dd; /* L 0.87 C 0.014 */
+  --n-5: #b5bfc9; /* L 0.8 C 0.018 */
+  --n-6: #94a0ad; /* L 0.7 C 0.024 */
+  --n-7: #6d7c8c; /* L 0.58 C 0.03 */
+  --n-8: #4b5a6a; /* L 0.46 C 0.032 */
+  --n-9: #3a4047; /* L 0.37 C 0.014 */
+  --n-10: #2d3238; /* L 0.315 C 0.013 */
+  --n-11: #22272d; /* L 0.27 C 0.013 */
+  --n-12: #1b2025; /* L 0.24 C 0.012 */
+  --n-13: #181c21; /* L 0.225 C 0.012 */
+  --n-14: #12171b; /* L 0.2 C 0.012 */
+  --n-15: #060a0e; /* L 0.14 C 0.012 */
+
+  --color-primary: light-dark(var(--n-12), var(--n-11)); /* graphite: primary buttons, chart ink */
+  --color-secondary: light-dark(var(--n-8), var(--n-6)); /* steel: labels, metadata */
+  --color-accent: #2f6fff; /* state: selection, focus, flagged datum */
+  --color-ground: light-dark(var(--n-2), var(--n-13)); /* the plain ground behind workspace content, and the canvas ground */
+  --color-sunken: light-dark(var(--n-1), var(--n-12)); /* inside container frames */
+  --color-edge: light-dark(var(--n-6), var(--n-8)); /* card, row and panel borders: 2:1 on ground and on paper */
+  --color-frame: var(--n-7); /* container frames and menu borders: 3:1 on ground and on sunken */
+  --color-surface: light-dark(var(--n-0), var(--n-11)); /* paper */
+  --color-text: light-dark(var(--n-15), var(--n-1)); /* ink on paper */
+  --color-muted: light-dark(var(--n-8), var(--n-5)); /* AA (4.5:1) on the band */
+  --color-border: light-dark(var(--n-4), var(--n-9)); /* hairlines */
+  --color-error: light-dark(#a82d26, #f07a70);
+  --color-success: light-dark(#1b7050, #45c08c);
+  --color-warning: light-dark(#8a5608, #e0a23c);
+  --radius-none: 0;
+  --radius-sm: 0;
+  --radius-md: 2px;
+  --radius-lg: 4px;
+  --radius-full: 9999px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --shadow-sm: 0 1px 0 rgba(20, 24, 30, 0.06);
+  --shadow-md: 0 12px 30px rgba(20, 24, 30, 0.1);
+  --shadow-lg: 0 24px 60px rgba(20, 24, 30, 0.14);
+  --control-h: 32px; /* inputs, selects and buttons share one height */
+  --motion-duration: 180ms;
+  --motion-easing: cubic-bezier(0.2, 0.7, 0, 1);
+  --font-heading: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --type-base-size: 17px;
+  --type-text-size: 15px; /* the one size of body, row, inspector and control text: buttons, inputs, menus, tooltips, tabs and segments */
+  --type-label-size: 12px; /* the one size of a mono label, a status chip and a chart's axis text, and the floor under all drawn text */
+  --type-line-height: 1.5;
+  --type-letter-spacing: 0.01em;
+  --type-heading-weight: 700;
+
+  /* Derived */
+  --chrome-bg: light-dark(var(--n-4), var(--n-14)); /* side panels and strips: a step off the ground (deeper in light, deeper in dark) */
+  --chrome-ink: light-dark(var(--n-15), var(--n-1));
+  --chrome-muted: light-dark(var(--n-8), var(--n-6));
+  --chrome-border: light-dark(var(--n-5), var(--n-11));
+  --chrome-brand: light-dark(#214f7c, #90bce9); /* the ramp's hue at higher chroma: the brand mark and the active nav marker, never state */
+  --color-band: light-dark(var(--n-3), var(--n-10)); /* steel header band on paper */
+  --color-rule: light-dark(rgba(20, 24, 30, 0.045), rgba(255, 255, 255, 0.06)); /* 24px ruling */
+  --color-tick: var(--color-secondary); /* corner registration ticks */
+  --ruling: linear-gradient(90deg, var(--color-rule) 1px, transparent 1px) 0 0 / 24px 24px, linear-gradient(0deg, var(--color-rule) 1px, transparent 1px) 0 0 / 24px 24px;
+  --color-hover: light-dark(rgba(20, 24, 30, 0.07), rgba(255, 255, 255, 0.07));
+  --color-tint: light-dark(rgba(47, 111, 255, 0.12), rgba(47, 111, 255, 0.16)); /* behind a selected row */
+  --color-add: light-dark(color-mix(in srgb, var(--color-success) 8%, transparent), color-mix(in srgb, var(--color-success) 10%, transparent)); /* success at 8% (light) or 10% (dark) */
+  --color-del: light-dark(color-mix(in srgb, var(--color-error) 8%, transparent), color-mix(in srgb, var(--color-error) 10%, transparent)); /* error at 8% (light) or 10% (dark) */
+  --color-change: light-dark(color-mix(in srgb, var(--color-warning) 8%, transparent), color-mix(in srgb, var(--color-warning) 10%, transparent)); /* warning at 8% (light) or 10% (dark) */
+  --chart-ink: light-dark(var(--color-primary), var(--color-text));
+  --chart-steel: light-dark(var(--color-secondary), var(--color-muted));
+  --chart-grid: var(--color-border);
+  --ink-fill: light-dark(var(--color-primary), var(--chrome-ink)); /* primary button */
+  --ink-hover: light-dark(var(--n-10), var(--chrome-muted));
+
+  /* Neutral ramp, dark to pale. */
+  --ramp-1: light-dark(var(--n-12), var(--n-1));
+  --ramp-2: light-dark(var(--n-8), var(--n-6));
+  --ramp-3: light-dark(var(--n-6), var(--n-7));
+  --ramp-4: light-dark(var(--n-4), var(--n-9));
+  color-scheme: light dark;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}

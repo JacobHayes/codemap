@@ -1,0 +1,6 @@
+# `target` is a symlink the build cache manages, so no trailing slash.
+/target
+web/node_modules
+web/dist
+dist/
+.codemap/index.duckdb*

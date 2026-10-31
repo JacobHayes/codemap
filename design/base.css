@@ -1,0 +1,591 @@
+/* codemap base styles and shared components (DESIGN.md). Load after tokens.css. */
+@import url("fonts/fonts.css");
+
+/* ---- base ---------------------------------------------------------------------------------- */
+* {
+  box-sizing: border-box;
+}
+html {
+  font-size: var(--type-base-size);
+}
+body {
+  margin: 0;
+  background: var(--color-ground);
+  color: var(--color-text);
+  font: 400 var(--type-base-size) / var(--type-line-height) var(--font-body);
+  letter-spacing: var(--type-letter-spacing);
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--color-secondary);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+a:hover {
+  text-decoration-color: currentColor;
+}
+code,
+pre,
+kbd,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+h1,
+h2 {
+  font-family: var(--font-heading);
+  font-weight: var(--type-heading-weight);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+h1 {
+  font-size: 1.563rem;
+  margin: 0 0 var(--space-4);
+}
+h2 {
+  font-size: 1.25rem;
+  margin: var(--space-5) 0 var(--space-2);
+}
+h3 {
+  font: 500 var(--type-label-size) / 1.4 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-secondary);
+  margin: var(--space-4) 0 var(--space-2);
+}
+.muted {
+  color: var(--color-muted);
+}
+.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.label {
+  font: 500 var(--type-label-size) / 1.4 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-secondary);
+}
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+::selection {
+  background: var(--color-tint);
+}
+
+.workspace {
+  min-width: 0;
+  padding: var(--space-5);
+  background: var(--color-ground);
+}
+
+/* Paper: surface + four corner ticks (L-shaped 1px strokes, 8px long, inset 3px). No ruling: that is for canvases. */
+.panel,
+.card {
+  --tick: linear-gradient(var(--color-tick), var(--color-tick));
+  background:
+    var(--tick) left 3px top 3px / 8px 1px no-repeat,
+    var(--tick) left 3px top 3px / 1px 8px no-repeat,
+    var(--tick) right 3px top 3px / 8px 1px no-repeat,
+    var(--tick) right 3px top 3px / 1px 8px no-repeat,
+    var(--tick) left 3px bottom 3px / 8px 1px no-repeat,
+    var(--tick) left 3px bottom 3px / 1px 8px no-repeat,
+    var(--tick) right 3px bottom 3px / 8px 1px no-repeat,
+    var(--tick) right 3px bottom 3px / 1px 8px no-repeat,
+    var(--color-surface);
+  color: var(--color-text);
+}
+
+
+/* ---- controls ------------------------------------------------------------------------------ */
+button,
+.button {
+  font: 500 var(--type-text-size) / 1.4 var(--font-body);
+  letter-spacing: var(--type-letter-spacing);
+  min-height: var(--control-h);
+  padding: 5px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  transition:
+    border-color var(--motion-duration) var(--motion-easing),
+    background var(--motion-duration) var(--motion-easing);
+}
+button:hover,
+.button:hover {
+  border-color: var(--color-secondary);
+}
+/* Primary = graphite ink, never blue. */
+button.primary {
+  background: var(--ink-fill);
+  border-color: var(--ink-fill);
+  color: var(--color-surface);
+}
+button.primary:hover {
+  background: var(--ink-hover);
+  border-color: var(--ink-hover);
+}
+button.ghost {
+  background: transparent;
+}
+button:disabled,
+button[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+}
+input,
+select,
+textarea {
+  font: 400 var(--type-text-size) / 1.4 var(--font-body);
+  padding: 4px 8px;
+  /* A select is as wide as its longest option: never wider than the box it sits in. */
+  max-width: 100%;
+}
+/* The box of a field. */
+input,
+select,
+textarea {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  min-height: var(--control-h);
+}
+input:hover,
+select:hover,
+textarea:hover:hover {
+  border-color: var(--color-secondary);
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
+  border-color: var(--color-accent);
+}
+/* One select style everywhere: square hairline box with a drawn steel chevron that follows the theme. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: var(--control-h);
+  padding: 0 28px 0 9px;
+  border-radius: 0;
+  line-height: calc(var(--control-h) - 2px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  max-width: 100%;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--chev, var(--color-secondary)) 50%) calc(100% - 15px) 55% / 5px 5px
+      no-repeat,
+    linear-gradient(135deg, var(--chev, var(--color-secondary)) 50%, transparent 50%) calc(100% - 10px) 55% / 5px 5px
+      no-repeat,
+    var(--color-surface);
+  transition: border-color var(--motion-duration) var(--motion-easing);
+}
+select:hover {
+  --chev: var(--color-text);
+}
+select:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+select option {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+/* A labelled control: small uppercase mono label above the input or select. */
+.field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.field > .label {
+  font-size: var(--type-label-size);
+  line-height: 1.2;
+}
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"] {
+  accent-color: var(--color-text);
+  min-height: 0;
+}
+input[type="number"],
+input[type="date"],
+input[type="time"],
+textarea {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+::placeholder {
+  color: var(--color-muted);
+  opacity: 1;
+}
+label {
+  font-size: var(--type-text-size);
+}
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-3);
+  font-size: var(--type-text-size);
+}
+.grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+/* Keyboard hints: mono, chrome ink on chrome. */
+
+/* ---- panels and cards ---------------------------------------------------------------------- */
+.panel {
+  position: relative;
+  border: 1px solid var(--color-edge);
+  padding: var(--space-3) var(--space-4);
+  box-shadow: var(--shadow-sm);
+}
+.panel-head,
+.panel > .label:first-child {
+  margin: calc(-1 * var(--space-3)) calc(-1 * var(--space-4)) var(--space-3);
+  padding: 5px var(--space-4);
+  background: var(--color-band);
+  border-bottom: 1px solid var(--color-border);
+  font: 500 var(--type-label-size) / 1.4 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-secondary);
+}
+.card {
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-band);
+  border-bottom: 1px solid var(--color-border);
+}
+.card-body {
+  padding: var(--space-3) var(--space-4);
+}
+.card-actions {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+.kv {
+  border-collapse: collapse;
+  font-size: var(--type-text-size);
+}
+.kv th {
+  text-align: left;
+  font: 500 var(--type-label-size) / 1.6 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-secondary);
+  padding: 3px 14px 3px 0;
+  vertical-align: top;
+}
+.kv td {
+  padding: 2px 0;
+}
+
+/* Status: mono label + small dot (a check for done work), never colour alone. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font: 500 var(--type-label-size) / 1.6 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-secondary);
+  background: var(--color-surface);
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+.badge[hidden] {
+  display: none;
+}
+.badge:is(.done, .good, .bad, .warn, .ink)::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--dot, var(--color-secondary));
+  flex: none;
+}
+.badge:is(.done, .good) {
+  --dot: var(--color-success);
+}
+/* Done and decided draw a check in the dot's place: a mask the chip's cap height, its stroke the text's weight, in the success colour. */
+.badge.done::before {
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 0;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.2 5.4 4 8 8.8 1.8' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='square'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.2 5.4 4 8 8.8 1.8' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='square'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.badge.bad {
+  --dot: var(--color-error);
+}
+.badge.warn {
+  --dot: var(--color-warning);
+}
+/* Ink variant: a filled dot in the text colour. */
+.badge.ink {
+  --dot: var(--color-text);
+}
+
+
+/* ---- tables -------------------------------------------------------------------------------- */
+table.data {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  background: var(--color-surface);
+  font-size: var(--type-text-size);
+}
+table.data th,
+table.data td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-edge);
+  vertical-align: top;
+}
+table.data th + th,
+table.data td + td {
+  border-left: 1px solid var(--color-border);
+}
+table.data th {
+  text-align: left;
+  font: 500 var(--type-label-size) / 1.4 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-secondary);
+  vertical-align: bottom;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-band);
+}
+table.data th[aria-sort] {
+  cursor: pointer;
+  user-select: none;
+}
+table.data th[aria-sort]:hover {
+  color: var(--color-text);
+}
+table.data th.num {
+  text-align: right;
+}
+table.data td.num {
+  font-size: 13px;
+}
+table.data td .muted {
+  color: var(--color-secondary);
+}
+/* Tree rows: one 1px guide in --color-edge through each depth's indent gutter; a container row is a band with a heavier title. */
+table.data td.tree {
+  --depth: 0;
+  padding-inline-start: calc(8px + var(--depth) * 24px);
+  background-image: repeating-linear-gradient(90deg, transparent 0 11px, var(--color-edge) 11px 12px, transparent 12px 24px);
+  background-size: calc(var(--depth) * 24px) 100%;
+  background-repeat: no-repeat;
+  background-position: 8px 0;
+}
+table.data tr.container td {
+  background-color: var(--color-band);
+  font-weight: 600;
+}
+table.data tbody tr {
+  transition: background var(--motion-duration) var(--motion-easing);
+}
+table.data tbody tr:hover td {
+  background-color: var(--color-hover);
+}
+table.data td code,
+table.data td .mono {
+  font-size: 12.5px;
+}
+.table-wrap {
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--color-edge);
+  background: var(--color-surface);
+}
+.table-wrap table.data tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Selection: 2px left accent line + faint blue tint. */
+table.data tr[aria-selected="true"] td,
+.selected,
+[role="option"][aria-selected="true"] {
+  background-color: var(--color-tint);
+}
+table.data tr[aria-selected="true"] > td:first-child,
+.selected,
+[role="option"][aria-selected="true"] {
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+
+/* ---- charts: greys for structure, the accent for the selected or flagged mark ---------------- */
+svg.chart {
+  overflow: visible;
+}
+svg.chart text {
+  fill: var(--color-secondary);
+  font: 400 var(--type-label-size) var(--font-mono);
+  letter-spacing: 0;
+}
+svg.chart .grid {
+  stroke: var(--chart-grid);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+svg.chart .axis {
+  stroke: var(--color-secondary);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+svg.chart .bar {
+  fill: var(--chart-ink);
+}
+svg.chart .bar.alt {
+  fill: var(--chart-steel);
+}
+svg.chart .line {
+  stroke: var(--chart-ink);
+  fill: none;
+  stroke-width: 1.5;
+}
+svg.chart .line.alt {
+  stroke: var(--chart-steel);
+}
+svg.chart .datum {
+  fill: var(--color-accent);
+}
+svg.chart .datum-line {
+  stroke: var(--color-accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  fill: none;
+}
+
+/* ---- toast, errors ------------------------------------------------------------------------- */
+.toast {
+  position: fixed;
+  bottom: var(--space-4);
+  right: var(--space-3);
+  z-index: 40;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 8px 14px;
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--radius-md);
+  background: var(--chrome-bg);
+  color: var(--chrome-ink);
+  font: 400 13px / 1.5 var(--font-mono);
+  letter-spacing: 0;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition:
+    opacity var(--motion-duration) var(--motion-easing),
+    transform var(--motion-duration) var(--motion-easing);
+}
+.toast.show {
+  opacity: 1;
+  transform: none;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Segmented control: native radios (arrow keys pick) or tabs, with an ink underline on the choice. */
+.segmented {
+  display: inline-flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+}
+.segmented :is(label, button) {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-h);
+  padding: 2px 12px;
+  margin: 0 0 -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-secondary);
+  font: 500 var(--type-text-size) / 1.4 var(--font-body);
+  letter-spacing: var(--type-letter-spacing);
+  cursor: pointer;
+}
+.segmented :is(label, button):hover {
+  color: var(--color-text);
+}
+.segmented input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.segmented :is(label:has(input:checked), button[aria-selected="true"]) {
+  background: var(--color-band);
+  color: var(--color-text);
+  border-bottom-color: var(--color-text);
+}
+.segmented label:has(input:focus-visible),
+.segmented button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* Popover and menu: a floating paper layer with a frame border; the body is the one scroller, capped. */
+.popover {
+  position: absolute;
+  z-index: 30;
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 24px));
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-frame);
+  box-shadow: var(--shadow-md);
+  /* A word with no break in it (a name, a path) wraps at the popover's edge instead of running out of it. */
+  overflow-wrap: anywhere;
+}

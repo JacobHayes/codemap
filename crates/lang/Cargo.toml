@@ -1,0 +1,12 @@
+[package]
+name = "codemap-lang"
+description = "Grammars and their node-kind tables: slow C builds, rarely changed."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

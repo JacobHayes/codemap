@@ -1,0 +1,42 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+repository = "https://github.com/JacobHayes/codemap"
+publish = false
+
+[workspace.dependencies]
+codemap-core = { path = "crates/core" }
+codemap-lang = { path = "crates/lang" }
+# Wire types for the query layer, and the JSON they travel as.
+serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+# Typed errors at module boundaries (PRACTICES, Code).
+thiserror = { version = "2.0.21", default-features = false }
+# Generates the TypeScript wire types from the Rust ones, so the UI cannot drift.
+ts-rs = { version = "12.0.1", default-features = false, features = ["serde-compat"] }
+# The CLI: derive-based argument parsing and --version.
+clap = { version = "4.6.7", default-features = false, features = ["derive", "help", "std", "usage", "error-context"] }
+# The HTTP server behind `codemap serve`: routing, JSON bodies, HTTP/1 on tokio.
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+# The async runtime axum runs on.
+tokio = { version = "1.54.1", default-features = false, features = ["macros", "net", "rt-multi-thread"] }
+# Embeds the built web app in the binary (debug builds too, so the browser tests run the real thing).
+rust-embed = { version = "8.13.0", default-features = false, features = ["debug-embed", "mime-guess"] }
+# Drives the router in tests without a socket.
+tower = { version = "0.5.3", default-features = false, features = ["util"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Errors return; a broken invariant is `expect("why this holds")` (PRACTICES, Code).
+unwrap_used = "deny"
+# Clippy's lint for functions over the line threshold in clippy.toml.
+too_many_lines = "warn"

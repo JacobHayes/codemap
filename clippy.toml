@@ -1,0 +1,11 @@
+# PRACTICES, Code: functions of at most 70 lines.
+too-many-lines-threshold = 70
+
+# PRACTICES, Code: iteration order of hash collections is random per run and leaks into output.
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "iteration order reaches outputs: use BTreeMap" },
+  { path = "std::collections::HashSet", reason = "iteration order reaches outputs: use BTreeSet" },
+]
+
+# A failed test is the intended outcome of a bad unwrap.
+allow-unwrap-in-tests = true
