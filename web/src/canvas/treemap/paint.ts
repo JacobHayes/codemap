@@ -6,9 +6,7 @@ import {
   type Swatch,
   type Theme,
 } from '../../palette';
-import { LABEL_PX, type Scene } from './layout';
-
-const LABEL_FONT = `500 ${String(LABEL_PX)}px "IBM Plex Mono", ui-monospace, monospace`;
+import { LABEL_FONT, type Scene } from './layout';
 
 // Tiles are flat fills (DESIGN, Views): no shading, borders or gradients. Edges snap to device
 // pixels so neighbouring tiles leave an even gutter.
@@ -27,7 +25,7 @@ export function paint(
 ): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  const steps = scaleSwatches(scene.scale.kind, scene.scale.steps, theme);
+  const steps = scene.scale ? scaleSwatches(scene.scale.kind, scene.scale.steps, theme) : [];
   const snap = (v: number) => Math.round(v * scale);
   for (let i = 0; i < scene.count; i++) {
     const x0 = snap(scene.x0[i] ?? 0);

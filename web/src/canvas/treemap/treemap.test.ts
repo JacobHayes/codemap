@@ -1,18 +1,53 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-  CHAR_PX,
-  DEPTH_MAX,
-  LABEL_PX,
-  labelCells,
-  layout,
-  type Scene,
-  type TreeInput,
-} from './layout';
+import type { Scale, Tree, TreeNode } from '../../generated/Answer';
+import { CHAR_PX, LABEL_PX, labelCells, layout, type Scene } from './layout';
+import { neighbour } from './nav';
 import { paint } from './paint';
 import { pick } from './pick';
 
-const SCALE = { kind: 'sequential', steps: 7, measure: 'lines', min: 0, max: 100 } as const;
+const SCALE: Scale = {
+  kind: 'sequential',
+  spacing: 'linear',
+  steps: 7,
+  measure: 'lines',
+  min: 0,
+  max: 100,
+  midpoint: null,
+  edges: [0, 14, 28, 42, 57, 71, 85, 100],
+};
+
+// A payload from nodes given as [id, parent, name, own size, colour step]: totals, kinds and
+// paths are derived the way the server does.
+type Row = [number, number | null, string, number, number | null];
+function payload(rows: Row[]): Tree {
+  const total = new Map<number, number>();
+  for (const [id, , , size] of rows) total.set(id, size);
+  for (const [id, parent] of [...rows].reverse()) {
+    if (parent !== null) total.set(parent, (total.get(parent) ?? 0) + (total.get(id) ?? 0));
+  }
+  const parents = new Set(rows.map(([, parent]) => parent));
+  const nodes: TreeNode[] = rows.map(([id, parent, name, size, colorStep]) => ({
+    id,
+    parent,
+    name,
+    size,
+    total: total.get(id) ?? 0,
+    colorStep,
+    value: null,
+    kind: parents.has(id) ? 'directory' : 'file',
+    path: name,
+    hidden: 0,
+  }));
+  return {
+    hierarchy: 'path',
+    depth: 3,
+    size: { measure: 'lines', unit: 'lines' },
+    total: total.get(rows[0]?.[0] ?? 0) ?? 0,
+    nodes,
+    scale: SCALE,
+  };
+}
 
 // A tree is generated as a parent pointer per node (to an earlier node), so parents precede children.
 type Spec = { parents: number[]; sizes: number[]; steps: (number | null)[] };
@@ -20,16 +55,17 @@ type Spec = { parents: number[]; sizes: number[]; steps: (number | null)[] };
 // A generated parent index is clamped to an earlier node.
 const parentOf = (p: number, i: number) => Math.max(0, Math.min(p, i - 1));
 
-function tree(spec: Spec): TreeInput {
+function tree(spec: Spec): Tree {
   const hasChild = new Set(spec.parents.map((p, i) => (i === 0 ? -1 : parentOf(p, i))));
-  const nodes = spec.sizes.map((size, i) => ({
-    id: 100 + i,
-    parent: i === 0 ? null : 100 + parentOf(spec.parents[i] ?? 0, i),
-    name: `${i % 3 ? 'node' : '日本語🎉'}-${String(i)}-with-a-longer-name`,
-    size: hasChild.has(i) ? 0 : size,
-    colorStep: spec.steps[i] ?? null,
-  }));
-  return { nodes, scale: SCALE };
+  return payload(
+    spec.sizes.map((size, i) => [
+      i,
+      i === 0 ? null : parentOf(spec.parents[i] ?? 0, i),
+      `${i % 3 ? 'node' : '日本語🎉'}-${String(i)}-with-a-longer-name`,
+      hasChild.has(i) ? 0 : size,
+      spec.steps[i] ?? null,
+    ]),
+  );
 }
 
 const size = fc.oneof(
@@ -60,9 +96,6 @@ function checkGeometry(s: Scene) {
     for (const v of [s.x0[i], s.y0[i], s.x1[i], s.y1[i]]) expect(Number.isFinite(v)).toBe(true);
     expect(s.x1[i]).toBeGreaterThan(s.x0[i] ?? 0);
     expect(s.y1[i]).toBeGreaterThan(s.y0[i] ?? 0);
-    let depth = 0;
-    for (let p = s.parent[i] ?? -1; p >= 0; p = s.parent[p] ?? -1) depth++;
-    expect(depth).toBeLessThanOrEqual(DEPTH_MAX);
     const p = s.parent[i] ?? -1;
     if (p >= 0) {
       expect(s.x0[i]).toBeGreaterThanOrEqual((s.x0[p] ?? 0) - EPS);
@@ -117,10 +150,10 @@ describe('layout', () => {
     ['wide', false],
     ['deep', true],
   ] as const) {
-    it(`keeps ${name} trees inside their parents, disjoint, shallow, with labels that fit`, () => {
+    it(`keeps ${name} trees inside their parents, disjoint, with labels that fit`, () => {
       fc.assert(
         fc.property(specOf(60, deep), (spec) => {
-          const s = layout(tree(spec), W, H, null);
+          const s = layout(tree(spec), W, H);
           checkGeometry(s);
           checkDisjoint(s);
           checkLabels(s);
@@ -135,13 +168,14 @@ describe('layout', () => {
       fc.property(
         fc.array(fc.integer({ min: 1, max: 1000 }), { minLength: 1, maxLength: 40 }),
         (sizes) => {
-          const nodes: TreeInput['nodes'] = [
-            { id: 0, parent: null, name: 'r', size: 0, colorStep: null },
-          ];
-          sizes.forEach((sz, i) =>
-            nodes.push({ id: i + 1, parent: 0, name: 'f', size: sz, colorStep: null }),
+          const s = layout(
+            payload([
+              [0, null, 'r', 0, null],
+              ...sizes.map((sz, i): Row => [i + 1, 0, 'f', sz, null]),
+            ]),
+            W,
+            H,
           );
-          const s = layout({ nodes, scale: SCALE }, W, H, null);
           const total = sizes.reduce((a, b) => a + b, 0);
           const tiles = Array.from({ length: s.count - 1 }, (_, k) => k + 1);
           const tileSum = tiles.reduce((a, i) => a + area(s, i), 0);
@@ -153,59 +187,88 @@ describe('layout', () => {
       ),
     );
   });
-
-  it('aggregates levels below the depth limit into their ancestor tile until drilled', () => {
-    const nodes: TreeInput['nodes'] = [
-      { id: 0, parent: null, name: 'root', size: 0, colorStep: null },
-    ];
-    // A file beside the first directory keeps the root from collapsing with it.
-    nodes.push({ id: 200, parent: 0, name: 'readme', size: 10, colorStep: null });
-    for (let d = 1; d <= 8; d++) {
-      nodes.push({ id: d, parent: d - 1, name: `dir${String(d)}`, size: 0, colorStep: null });
-      nodes.push({ id: 100 + d, parent: d, name: `file${String(d)}`, size: 10, colorStep: null });
-    }
-    const s = layout({ nodes, scale: SCALE }, W, H, null);
-    const tiles = Array.from({ length: s.count }, (_, i) => i).filter((i) => s.isTile[i]);
-    expect(tiles.every((i) => !s.canDrill[i] || s.nodeId[i] === DEPTH_MAX)).toBe(true);
-    const aggregate = Array.from(s.nodeId).indexOf(DEPTH_MAX);
-    expect(s.canDrill[aggregate]).toBe(1);
-    expect(s.labels.find((l) => l.node === aggregate)?.value).toBe(
-      (10 * (8 - DEPTH_MAX + 1)).toLocaleString('en-US'),
-    );
-    const drilled = layout({ nodes, scale: SCALE }, W, H, DEPTH_MAX);
-    expect(Array.from(drilled.nodeId)).toContain(DEPTH_MAX + 1);
-  });
 });
 
-describe('layout, continued', () => {
-  it('drills into a subtree and fills the whole canvas with it', () => {
-    const input = tree({ parents: [0, 0, 1, 1, 0], sizes: [0, 0, 5, 7, 9], steps: [] });
-    const s = layout(input, 300, 200, 101);
-    expect(s.nodeId[0]).toBe(101);
-    expect([s.x0[0], s.y0[0], s.x1[0], s.y1[0]]).toEqual([0, 0, 300, 200]);
-    expect(Array.from(s.nodeId).sort()).toEqual([101, 102, 103]);
+describe('layout labels and chains', () => {
+  it('labels a tile with its total and unit, and a short wide tile with its name alone', () => {
+    const rows: Row[] = [
+      [0, null, 'root', 0, null],
+      [1, 0, 'big.rs', 303_000, null],
+      [2, 0, 'small.rs', 700, null],
+    ];
+    const s = layout(payload(rows), 800, 400);
+    expect(s.labels.find((l) => s.nodeId[l.node] === 1)?.value).toBe('303k lines');
+    const flat = layout(payload(rows), 800, 40);
+    const named = flat.labels.filter((l) => l.node > 0);
+    expect(named.length).toBeGreaterThan(0);
+    expect(named.every((l) => l.value === null)).toBe(true);
+  });
+
+  it('marks directories as drillable, files not', () => {
+    const s = layout(
+      payload([
+        [0, null, 'root', 0, null],
+        [1, 0, 'dir', 0, null],
+        [2, 1, 'a.rs', 5, null],
+        [3, 0, 'b.rs', 9, null],
+      ]),
+      600,
+      300,
+    );
+    for (let i = 1; i < s.count; i++) {
+      expect(s.canDrill[i]).toBe(s.nodeId[i] === 1 ? 1 : 0);
+    }
   });
 
   it('collapses a single-child directory chain into one labelled band', () => {
-    const nodes: TreeInput['nodes'] = [
-      { id: 0, parent: null, name: 'alpha', size: 0, colorStep: null },
-      { id: 1, parent: 0, name: 'beta', size: 0, colorStep: null },
-      { id: 2, parent: 1, name: 'gamma', size: 0, colorStep: null },
-      { id: 3, parent: 2, name: 'f1', size: 5, colorStep: null },
-      { id: 4, parent: 2, name: 'f2', size: 5, colorStep: null },
+    const rows: Row[] = [
+      [0, null, 'alpha', 0, null],
+      [1, 0, 'beta', 0, null],
+      [2, 1, 'gamma', 0, null],
+      [3, 2, 'f1', 5, null],
+      [4, 2, 'f2', 5, null],
     ];
-    const s = layout({ nodes, scale: SCALE }, 600, 300, null);
+    const s = layout(payload(rows), 600, 300);
     expect(Array.from(s.nodeId)).toEqual([2, 3, 4]);
     expect(s.labels[0]?.name).toBe('alpha/beta/gamma');
-    const narrow = layout({ nodes, scale: SCALE }, 100, 300, null);
+    const narrow = layout(payload(rows), 100, 300);
     expect(narrow.labels[0]?.name.startsWith('…')).toBe(true);
     expect(narrow.labels[0]?.name.endsWith('gamma')).toBe(true);
   });
 
   it('survives an empty or all-zero tree', () => {
     const zero = tree({ parents: [0, 0], sizes: [0, 0], steps: [] });
-    expect(layout(zero, W, H, null).count).toBe(0);
-    expect(layout({ nodes: [], scale: SCALE }, W, H, null).count).toBe(0);
+    expect(layout(zero, W, H).count).toBe(0);
+    expect(layout({ ...zero, nodes: [], scale: null }, W, H).count).toBe(0);
+  });
+});
+
+describe('keyboard neighbours', () => {
+  it('moves to a sibling in the direction asked, and stays among siblings', () => {
+    fc.assert(
+      fc.property(specOf(40, false), (spec) => {
+        const s = layout(tree(spec), W, H);
+        for (let from = 1; from < s.count; from++) {
+          for (const direction of ['left', 'right', 'up', 'down'] as const) {
+            const to = neighbour(s, from, direction);
+            if (to === null) continue;
+            expect(s.parent[to]).toBe(s.parent[from]);
+            const cx = (i: number) => ((s.x0[i] ?? 0) + (s.x1[i] ?? 0)) / 2;
+            const cy = (i: number) => ((s.y0[i] ?? 0) + (s.y1[i] ?? 0)) / 2;
+            const moved = { left: cx(from) - cx(to), right: cx(to) - cx(from) };
+            const down = { up: cy(from) - cy(to), down: cy(to) - cy(from) };
+            const along = direction === 'left' || direction === 'right' ? moved : down;
+            expect(along[direction as keyof typeof along]).toBeGreaterThan(0);
+          }
+        }
+      }),
+      { numRuns: 40 },
+    );
+  });
+
+  it('selects the first tile when nothing is selected', () => {
+    const s = layout(tree({ parents: [0, 0, 0], sizes: [0, 5, 9], steps: [] }), W, H);
+    expect(neighbour(s, null, 'right')).toBe(1);
   });
 });
 
@@ -226,7 +289,7 @@ describe('paint and pick', () => {
   it('fills one rect per tile inside the canvas and picks the tile under a point', () => {
     fc.assert(
       fc.property(specOf(80, false), fc.constantFrom(1, 2), (spec, scale) => {
-        const s = layout(tree(spec), 400, 300, null);
+        const s = layout(tree(spec), 400, 300);
         const { fills, ctx } = recorder();
         paint(ctx, s, 'light', scale);
         expect(fills).toHaveLength(s.count);
@@ -255,25 +318,23 @@ describe('paint and pick', () => {
       [10_000, 20],
       [100_000, 50],
     ] as const) {
-      const nodes: TreeInput['nodes'] = [
-        { id: 0, parent: null, name: 'root', size: 0, colorStep: null },
-      ];
+      const rows: Row[] = [[0, null, 'root', 0, null]];
       let seed = 7;
       const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
       for (let d = 1; d <= dirs; d++) {
-        nodes.push({ id: d, parent: 0, name: `d${String(d)}`, size: 0, colorStep: null });
+        rows.push([d, 0, `d${String(d)}`, 0, null]);
       }
       for (let f = 0; f < leaves; f++) {
-        nodes.push({
-          id: dirs + 1 + f,
-          parent: 1 + (f % dirs),
-          name: `f${String(f)}.rs`,
-          size: Math.ceil(rand() ** 4 * 5000),
-          colorStep: Math.floor(rand() * 7),
-        });
+        rows.push([
+          dirs + 1 + f,
+          1 + (f % dirs),
+          `f${String(f)}.rs`,
+          Math.ceil(rand() ** 4 * 5000),
+          Math.floor(rand() * 7),
+        ]);
       }
       const t0 = performance.now();
-      const s = layout({ nodes, scale: SCALE }, 1600, 1000, null);
+      const s = layout(payload(rows), 1600, 1000);
       const t1 = performance.now();
       const { fills, ctx } = recorder();
       paint(ctx, s, 'dark', 1);

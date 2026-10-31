@@ -14,10 +14,3 @@ export function pick(scene: Scene, x: number, y: number): number | null {
   }
   return null;
 }
-
-/** The path of a tile from the drill root, joined with slashes. */
-export function pathOf(scene: Scene, i: number): string {
-  const names: string[] = [];
-  for (let p = i; p >= 0; p = scene.parent[p] ?? -1) names.unshift(scene.name[p] ?? '');
-  return names.join('/');
-}

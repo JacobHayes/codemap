@@ -1,16 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Theme } from '../../palette';
-import { layout, type Scene, type TreeInput } from './layout';
+import type { Tree } from '../../generated/Answer';
+import { layout, LABEL_FONT, type Scene } from './layout';
+import { neighbour, type Direction } from './nav';
 import { paint, paintMarks } from './paint';
-import { pathOf, pick } from './pick';
+import { pick } from './pick';
+
+/** Where the pointer, or the keyboard's selection, is pointing: a node, and a spot on the page. */
+export type Pointed = { nodeId: number; x: number; y: number };
 
 export type TreemapProps = {
-  input: TreeInput;
-  drillRootId: number | null;
+  tree: Tree;
   selectedId: number | null;
-  onHover: (hover: { nodeId: number; path: string } | null) => void;
-  onSelect: (nodeId: number) => void;
+  onPoint: (pointed: Pointed | null) => void;
+  onSelect: (nodeId: number | null) => void;
   onDrill: (nodeId: number) => void;
+  onUp: () => void;
+};
+
+const ARROWS: Record<string, Direction> = {
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+  ArrowUp: 'up',
+  ArrowDown: 'down',
 };
 
 const dark = () => window.matchMedia('(prefers-color-scheme: dark)');
@@ -64,36 +76,77 @@ const deviceSize = (width: number, height: number, scale: number) => ({
   height: Math.max(1, Math.round(height * scale)),
 });
 
+// Canvas text falls back to another face until the mono face has loaded; paint again after.
+function useFontsReady(): boolean {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    void document.fonts.load(LABEL_FONT).then(() => {
+      setReady(true);
+    });
+  }, []);
+  return ready;
+}
+
+type KeyActions = Pick<TreemapProps, 'onPoint' | 'onSelect' | 'onDrill' | 'onUp'> & {
+  setHover: (i: number | null) => void;
+};
+
+// Arrows move the selection among siblings and point at the new tile from its lower left corner.
+function useKeys(
+  box: React.RefObject<HTMLDivElement | null>,
+  scene: Scene,
+  selected: number | null,
+  act: KeyActions,
+) {
+  return (e: React.KeyboardEvent) => {
+    const direction = ARROWS[e.key];
+    if (direction) {
+      const next = neighbour(scene, selected, direction);
+      if (next === null) {
+        e.preventDefault();
+        return;
+      }
+      const r = box.current?.getBoundingClientRect();
+      act.onSelect(scene.nodeId[next] ?? null);
+      act.setHover(next);
+      act.onPoint({
+        nodeId: scene.nodeId[next] ?? -1,
+        x: (r?.left ?? 0) + (scene.x0[next] ?? 0) + 8,
+        y: (r?.top ?? 0) + (scene.y1[next] ?? 0) - 8,
+      });
+    } else if (e.key === 'Enter' && selected !== null && scene.canDrill[selected]) {
+      act.onDrill(scene.nodeId[selected] ?? -1);
+    } else if (e.key === 'Backspace') {
+      act.onUp();
+    } else if (e.key === 'Escape') {
+      act.setHover(null);
+      act.onPoint(null);
+    } else return;
+    e.preventDefault();
+  };
+}
+
 /** The treemap: a picture canvas under an overlay canvas for the outlines. React only hosts it. */
-export function Treemap({
-  input,
-  drillRootId,
-  selectedId,
-  onHover,
-  onSelect,
-  onDrill,
-}: TreemapProps) {
+export function Treemap({ tree, selectedId, onPoint, onSelect, onDrill, onUp }: TreemapProps) {
   const box = useRef<HTMLDivElement>(null);
   const picture = useRef<HTMLCanvasElement>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
   const [hover, setHover] = useState<number | null>(null);
   const { width, height } = useSize(box);
   const theme = useTheme();
+  const fonts = useFontsReady();
   const scale = window.devicePixelRatio;
-  const scene = useMemo<Scene>(
-    () => layout(input, width, height, drillRootId),
-    [input, width, height, drillRootId],
-  );
+  const scene = useMemo<Scene>(() => layout(tree, width, height), [tree, width, height]);
   const selected = useMemo(() => {
     const index = scene.nodeId.indexOf(selectedId ?? -2);
-    return index < 0 ? null : index;
+    return index < 1 ? null : index;
   }, [scene, selectedId]);
   const pixels = deviceSize(width, height, scale);
 
   useEffect(() => {
     const ctx = picture.current?.getContext('2d');
     if (ctx) paint(ctx, scene, theme, scale);
-  }, [scene, theme, scale]);
+  }, [scene, theme, scale, fonts]);
   useEffect(() => {
     const ctx = overlay.current?.getContext('2d');
     if (ctx) paintMarks(ctx, scene, theme, scale, { hover, selected });
@@ -103,11 +156,17 @@ export function Treemap({
     const r = e.currentTarget.getBoundingClientRect();
     return pick(scene, e.clientX - r.left, e.clientY - r.top);
   };
+  const onKeyDown = useKeys(box, scene, selected, { setHover, onPoint, onSelect, onDrill, onUp });
   return (
     <div
       ref={box}
       className="treemap"
+      role="group"
+      aria-label="Treemap. Arrow keys move between tiles, Enter opens a folder, Backspace goes up, Escape closes the tooltip."
+      tabIndex={0}
       style={{ position: 'relative', width: '100%', height: '100%' }}
+      data-tiles={scene.count}
+      onKeyDown={onKeyDown}
     >
       <canvas ref={picture} {...pixels} style={{ position: 'absolute', width, height }} />
       <canvas
@@ -117,15 +176,18 @@ export function Treemap({
         onMouseMove={(e) => {
           const i = at(e);
           setHover(i);
-          onHover(i === null ? null : { nodeId: scene.nodeId[i] ?? -1, path: pathOf(scene, i) });
+          onPoint(
+            i === null ? null : { nodeId: scene.nodeId[i] ?? -1, x: e.clientX, y: e.clientY },
+          );
         }}
         onMouseLeave={() => {
           setHover(null);
-          onHover(null);
+          onPoint(null);
         }}
         onClick={(e) => {
           const i = at(e);
-          if (i !== null) onSelect(scene.nodeId[i] ?? -1);
+          box.current?.focus();
+          onSelect(i === null || i === 0 ? null : (scene.nodeId[i] ?? null));
         }}
         onDoubleClick={(e) => {
           const i = at(e);
