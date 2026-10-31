@@ -42,10 +42,10 @@ fn mark(node: &Node, source: &[u8]) -> Option<Mark> {
         "attribute_item" if is_test_attribute(node, source) => Some(Mark::RoleThrough(Role::Test)),
         "function_item" if has_test_attribute(node, source) => Some(Mark::TestFunction),
         "mod_item" if module_name(node, source) == Some("tests") => Some(Mark::Role(Role::Test)),
-        // An arm that matches the error case of a `Result`.
-        "match_arm" if is_err_pattern(node, source) => Some(Mark::Concern(Concern::Handler)),
-        // `if let Err(..) = x { .. }`: the condition and the block it guards.
-        "let_condition" if is_err_pattern(node, source) => Some(Mark::Concern(Concern::Handler)),
+        // An arm, or the condition of `if let Err(..) = x { .. }`, that matches the error case.
+        "match_arm" | "let_condition" if is_err_pattern(node, source) => {
+            Some(Mark::Concern(Concern::Handler))
+        }
         "block" if guarded_by_err_pattern(node, source) || is_let_else(node) => {
             Some(Mark::Concern(Concern::Handler))
         }
@@ -83,7 +83,8 @@ fn guarded_by_err_pattern(node: &Node, source: &[u8]) -> bool {
 /// The block of `let Some(x) = y else { <here> };`, which runs only when the pattern fails.
 fn is_let_else(node: &Node) -> bool {
     node.parent().is_some_and(|parent| {
-        parent.kind() == "let_declaration" && parent.child_by_field_name("alternative") == Some(*node)
+        parent.kind() == "let_declaration"
+            && parent.child_by_field_name("alternative") == Some(*node)
     })
 }
 

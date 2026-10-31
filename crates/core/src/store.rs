@@ -11,7 +11,7 @@ use crate::facts::FileFacts;
 
 /// Directory holding everything codemap keeps for a project.
 pub const STATE_DIR: &str = ".codemap";
-const DATABASE_FILE: &str = "index.duckdb";
+pub(crate) const DATABASE_FILE: &str = "index.duckdb";
 /// Ignores everything in the state directory except the committed config and itself.
 const STATE_GITIGNORE: &str = "*\n!.gitignore\n!config.toml\n";
 
@@ -27,6 +27,18 @@ CREATE TABLE IF NOT EXISTS symbols (
     start_line UINTEGER, end_line UINTEGER, content_hash VARCHAR);
 CREATE TABLE IF NOT EXISTS refs (
     path VARCHAR, line UINTEGER, name VARCHAR, kind VARCHAR, symbol VARCHAR);
+CREATE TABLE IF NOT EXISTS findings (
+    detector VARCHAR, subject VARCHAR, subject_kind VARCHAR, area VARCHAR, reason VARCHAR,
+    mass_lines DOUBLE, confidence DOUBLE, measures VARCHAR, labels VARCHAR, evidence VARCHAR,
+    acknowledged VARCHAR);
+CREATE TABLE IF NOT EXISTS areas (
+    subject VARCHAR, subject_kind VARCHAR, rank UINTEGER, opportunity DOUBLE, mass_lines DOUBLE,
+    confidence DOUBLE, detectors VARCHAR, finding_count UINTEGER, reason VARCHAR,
+    acknowledged VARCHAR);
+CREATE OR REPLACE VIEW line_facts AS
+    SELECT l.path, l.line, l.tokens, l.nodes, l.role, l.concern, l.symbol, f.language,
+           s.kind AS symbol_kind
+    FROM lines l JOIN files f ON f.path = l.path LEFT JOIN symbols s ON s.id = l.symbol;
 ";
 
 /// Tables holding per-file rows, keyed by `path`.
@@ -68,6 +80,10 @@ impl Store {
         let connection = Connection::open(dir.join(DATABASE_FILE))?;
         connection.execute_batch(SCHEMA)?;
         Ok(Self { connection })
+    }
+
+    pub(crate) fn connection(&self) -> &Connection {
+        &self.connection
     }
 
     pub fn begin(&self) -> Result<(), StoreError> {

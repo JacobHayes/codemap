@@ -9,7 +9,16 @@ const VENDORED_DIRS: &[&str] = &[
     "third-party",
     "node_modules",
 ];
-const TEST_DIRS: &[&str] = &["tests", "test", "__tests__", "spec", "specs"];
+const TEST_DIRS: &[&str] = &[
+    "tests",
+    "test",
+    "__tests__",
+    "spec",
+    "specs",
+    "fixtures",
+    "testdata",
+    "__snapshots__",
+];
 const BENCH_DIRS: &[&str] = &["benches", "bench", "benchmarks"];
 const EXAMPLE_DIRS: &[&str] = &["examples", "example"];
 const SCRIPT_DIRS: &[&str] = &["scripts", "script"];
@@ -85,7 +94,10 @@ fn is_test_file(file: &str, stem: &str, language: Option<&Language>) -> bool {
                 .iter()
                 .any(|suffix| stem.ends_with(suffix))
     });
-    by_language || stem == "conftest" || file.contains(".test.") || file.contains(".spec.")
+    by_language
+        || matches!(stem, "conftest" | "test" | "tests")
+        || file.contains(".test.")
+        || file.contains(".spec.")
 }
 
 fn has_generated_marker(text: &str) -> bool {

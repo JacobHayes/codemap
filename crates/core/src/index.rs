@@ -8,7 +8,10 @@ use std::path::Path;
 use ignore::WalkBuilder;
 use rayon::prelude::*;
 
+use crate::config::{Config, ConfigError, RoleOverrides};
+use crate::detect::{detect, rank};
 use crate::facts::{FileFacts, TOKEN_ENCODING, extract};
+use crate::reader::{Index, QueryError};
 use crate::store::{STATE_DIR, Store, StoreError};
 
 /// Version-control directories are never part of the codebase, whatever the ignore files say.
@@ -24,6 +27,10 @@ pub enum IndexError {
     BuildId(io::Error),
     #[error(transparent)]
     Store(#[from] StoreError),
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error("cannot analyse the index: {0}")]
+    Analysis(#[from] QueryError),
 }
 
 /// What one run of [`index`] did.
@@ -48,9 +55,14 @@ struct Scanned {
 /// Fails when the tree cannot be walked or read, or the index cannot be written.
 pub fn index(root: &Path) -> Result<IndexReport, IndexError> {
     let store = Store::open(root)?;
+    let config = Config::load(root)?;
+    let roles = RoleOverrides::new(&config.roles)?;
+    // Role overrides change what extraction stores, so a change to them re-extracts everything.
+    let roles_key = format!("{:?}", config.roles);
     let build_id = build_id()?;
     let stale = store.meta("build_id")?.as_deref() != Some(build_id.as_str())
-        || store.meta("tokenizer")?.as_deref() != Some(TOKEN_ENCODING);
+        || store.meta("tokenizer")?.as_deref() != Some(TOKEN_ENCODING)
+        || store.meta("roles")?.as_deref() != Some(roles_key.as_str());
     let stored = if stale {
         BTreeMap::new()
     } else {
@@ -60,7 +72,7 @@ pub fn index(root: &Path) -> Result<IndexReport, IndexError> {
     let paths = discover(root)?;
     let scanned = paths
         .par_iter()
-        .map(|path| scan(root, path, stored.get(path)))
+        .map(|path| scan(root, path, stored.get(path), &roles))
         .collect::<Result<Vec<_>, _>>()?;
 
     let present: std::collections::BTreeSet<&str> = paths.iter().map(String::as_str).collect();
@@ -90,14 +102,39 @@ pub fn index(root: &Path) -> Result<IndexReport, IndexError> {
     }))?;
     store.set_meta("build_id", &build_id)?;
     store.set_meta("tokenizer", TOKEN_ENCODING)?;
+    store.set_meta("roles", &roles_key)?;
     store.commit()?;
 
     let (file_count, line_count) = store.totals()?;
+    analyse(store, root, &config, &build_id)?;
     Ok(IndexReport {
         file_count,
         line_count,
         extracted_count: extracted.count() as u64,
     })
+}
+
+/// Runs the detectors and ranking over the whole index, unless nothing they read has changed.
+fn analyse(store: Store, root: &Path, config: &Config, build_id: &str) -> Result<(), IndexError> {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(build_id.as_bytes());
+    hasher.update(config.text.as_bytes());
+    for (path, hash) in store.file_hashes()? {
+        hasher.update(path.as_bytes());
+        hasher.update(hash.as_bytes());
+    }
+    let key = hasher.finalize().to_hex().to_string();
+    if store.meta("analysis")?.as_deref() == Some(key.as_str()) {
+        return Ok(());
+    }
+    let index = Index::new(store, root);
+    let mut findings = detect(&index, config)?;
+    let areas = rank(&mut findings, config);
+    index.store().begin()?;
+    index.save_analysis(&findings, &areas)?;
+    index.store().set_meta("analysis", &key)?;
+    index.store().commit()?;
+    Ok(())
 }
 
 /// Hashes the running executable: any rebuild of codemap changes what extraction may produce.
@@ -140,13 +177,27 @@ fn discover(root: &Path) -> Result<Vec<String>, IndexError> {
 }
 
 /// Reads and hashes one file, and extracts it unless its hash matches the stored one.
-fn scan(root: &Path, path: &str, stored_hash: Option<&String>) -> Result<Scanned, IndexError> {
+fn scan(
+    root: &Path,
+    path: &str,
+    stored_hash: Option<&String>,
+    roles: &RoleOverrides,
+) -> Result<Scanned, IndexError> {
     let bytes = fs::read(root.join(path)).map_err(|source| IndexError::Read {
         path: path.to_owned(),
         source,
     })?;
     let hash = blake3::hash(&bytes).to_hex().to_string();
-    let facts = (stored_hash != Some(&hash)).then(|| extract(path, &bytes));
+    let facts = (stored_hash != Some(&hash)).then(|| {
+        let mut facts = extract(path, &bytes);
+        if let Some(role) = roles.role_for(path) {
+            facts.role = role;
+            for line in &mut facts.lines {
+                line.role = role;
+            }
+        }
+        facts
+    });
     Ok(Scanned {
         path: path.to_owned(),
         hash,

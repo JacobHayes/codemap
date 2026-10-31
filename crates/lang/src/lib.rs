@@ -22,6 +22,25 @@ pub enum Role {
 }
 
 impl Role {
+    /// Every role, in display order.
+    pub const ALL: [Self; 9] = [
+        Self::Prod,
+        Self::Test,
+        Self::Bench,
+        Self::Example,
+        Self::Script,
+        Self::Docs,
+        Self::Config,
+        Self::Generated,
+        Self::Vendored,
+    ];
+
+    /// The role stored under this name.
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|role| role.as_str() == name)
+    }
+
     /// The name stored in the index.
     #[must_use]
     pub fn as_str(self) -> &'static str {
@@ -51,6 +70,16 @@ pub enum Concern {
 }
 
 impl Concern {
+    /// Every concern, in display order.
+    pub const ALL: [Self; 6] = [
+        Self::Core,
+        Self::Handler,
+        Self::Assertion,
+        Self::Logging,
+        Self::Comment,
+        Self::Import,
+    ];
+
     /// The name stored in the index.
     #[must_use]
     pub fn as_str(self) -> &'static str {

@@ -1,0 +1,124 @@
+//! The `findings` and `areas` tables.
+
+use std::collections::BTreeMap;
+
+use duckdb::params;
+
+use super::{Area, Finding, SubjectKind};
+use crate::reader::{Index, QueryError};
+
+fn kind_of(name: &str) -> SubjectKind {
+    match name {
+        "directory" => SubjectKind::Directory,
+        "function" => SubjectKind::Function,
+        _ => SubjectKind::File,
+    }
+}
+
+impl Index {
+    /// Replaces every finding and area.
+    pub(crate) fn save_analysis(
+        &self,
+        findings: &[Finding],
+        areas: &[Area],
+    ) -> Result<(), QueryError> {
+        let connection = self.store().connection();
+        connection.execute_batch("DELETE FROM findings; DELETE FROM areas;")?;
+        let mut finding_rows = connection.appender("findings")?;
+        for finding in findings {
+            finding_rows.append_row(params![
+                finding.detector,
+                finding.subject,
+                finding.subject_kind.as_str(),
+                finding.area,
+                finding.reason,
+                finding.mass_lines,
+                finding.confidence,
+                serde_json::to_string(&finding.measures)?,
+                serde_json::to_string(&finding.labels)?,
+                serde_json::to_string(&finding.evidence)?,
+                finding.acknowledged
+            ])?;
+        }
+        finding_rows.flush()?;
+        let mut area_rows = connection.appender("areas")?;
+        for area in areas {
+            area_rows.append_row(params![
+                area.subject,
+                area.subject_kind.as_str(),
+                area.rank,
+                area.opportunity,
+                area.mass_lines,
+                area.confidence,
+                area.detectors.join(","),
+                area.finding_count,
+                area.reason,
+                area.acknowledged
+            ])?;
+        }
+        area_rows.flush()?;
+        Ok(())
+    }
+
+    /// Every area, best first.
+    pub(crate) fn areas(&self) -> Result<Vec<Area>, QueryError> {
+        let mut statement = self.store().connection().prepare(
+            "SELECT subject, subject_kind, rank, opportunity, mass_lines, confidence, detectors,
+                    finding_count, reason, acknowledged FROM areas ORDER BY rank",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let detectors: String = row.get(6)?;
+            Ok(Area {
+                subject: row.get(0)?,
+                subject_kind: kind_of(&row.get::<_, String>(1)?),
+                rank: row.get(2)?,
+                opportunity: row.get(3)?,
+                mass_lines: row.get(4)?,
+                confidence: row.get(5)?,
+                detectors: detectors.split(',').map(str::to_owned).collect(),
+                finding_count: row.get(7)?,
+                reason: row.get(8)?,
+                acknowledged: row.get(9)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// The findings of one area, biggest first.
+    pub(crate) fn findings_of(&self, area: &str) -> Result<Vec<Finding>, QueryError> {
+        let mut statement = self.store().connection().prepare(
+            "SELECT detector, subject, subject_kind, area, reason, mass_lines, confidence,
+                    measures, labels, evidence, acknowledged
+             FROM findings WHERE area = ? ORDER BY mass_lines DESC, detector, subject",
+        )?;
+        let rows = statement.query_map([area], |row| {
+            Ok((
+                Finding {
+                    detector: row.get(0)?,
+                    subject: row.get(1)?,
+                    subject_kind: kind_of(&row.get::<_, String>(2)?),
+                    area: row.get(3)?,
+                    reason: row.get(4)?,
+                    mass_lines: row.get(5)?,
+                    confidence: row.get(6)?,
+                    measures: BTreeMap::new(),
+                    labels: BTreeMap::new(),
+                    evidence: Vec::new(),
+                    acknowledged: row.get(10)?,
+                },
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, String>(9)?,
+            ))
+        })?;
+        let mut findings = Vec::new();
+        for row in rows {
+            let (mut finding, measures, labels, evidence) = row?;
+            finding.measures = serde_json::from_str(&measures)?;
+            finding.labels = serde_json::from_str(&labels)?;
+            finding.evidence = serde_json::from_str(&evidence)?;
+            findings.push(finding);
+        }
+        Ok(findings)
+    }
+}

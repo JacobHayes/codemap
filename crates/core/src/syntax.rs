@@ -19,7 +19,7 @@ static QUERIES: LazyLock<BTreeMap<&'static str, Query>> = LazyLock::new(|| {
                 &(language.grammar)(),
                 &format!("{}\n{}", language.tags_query, language.extra_tags_query),
             )
-                .expect("a shipped tags query compiles against its grammar");
+            .expect("a shipped tags query compiles against its grammar");
             (language.name, query)
         })
         .collect()
