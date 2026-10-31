@@ -265,7 +265,8 @@ Agents get aggregates first and choose how deep to go with `--top` and drill-dow
 ## Web UI
 
 React and TypeScript built with Vite, embedded in the binary. React draws the chrome (filters,
-breadcrumbs, tables, panels); views that draw many marks are framework-free canvas modules.
+breadcrumbs, tables, panels); the treemap, which draws many marks, is a framework-free canvas
+module. The cross-tab is a bounded table of buttons, so every cell is focusable and readable.
 
 - **Views:** a flat treemap, a cross-tab heatmap, the area queue and a source
   viewer. A code city may follow, reusing the treemap's layout.

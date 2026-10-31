@@ -18,9 +18,18 @@ function colourLine(tree: Tree, catalog: Catalog | null, node: TreeNode): string
   return node.value === null ? `${description}: no value` : `${description}: ${plain(node.value)}`;
 }
 
-/** The one tooltip (DESIGN, Components): the full path, the exact values and what a click does.
+type BoxProps = {
+  x: number;
+  y: number;
+  title: string;
+  lines: string[];
+  hint: string;
+  onDismiss: () => void;
+};
+
+/** The one tooltip (DESIGN, Components): the full name, the exact values and what a click does.
  * Esc dismisses it wherever the focus is. */
-export function Tooltip({ tree, catalog, node, x, y, onDismiss }: TooltipProps) {
+export function TooltipBox({ x, y, title, lines, hint, onDismiss }: BoxProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onDismiss();
@@ -30,11 +39,9 @@ export function Tooltip({ tree, catalog, node, x, y, onDismiss }: TooltipProps) 
       window.removeEventListener('keydown', onKey);
     };
   }, [onDismiss]);
-  const colour = colourLine(tree, catalog, node);
   // Near the right or lower edge the tooltip opens towards the middle.
   const flipX = x > window.innerWidth / 2;
   const flipY = y > window.innerHeight * 0.6;
-  const isFolder = node.kind === 'directory';
   return (
     <div
       role="tooltip"
@@ -46,15 +53,29 @@ export function Tooltip({ tree, catalog, node, x, y, onDismiss }: TooltipProps) 
         transform: `translate(${flipX ? 'calc(-100% - 12px)' : '12px'}, ${flipY ? 'calc(-100% - 12px)' : '12px'})`,
       }}
     >
-      <div className="tooltip-path">{node.path === '' ? 'Whole codebase' : node.path}</div>
-      <div>{exactAmount(node.total, tree.size.unit)}</div>
-      {colour && <div>{colour}</div>}
-      {node.hidden > 0 && (
-        <div>{`${node.hidden.toLocaleString('en-US')} deeper items not drawn`}</div>
-      )}
-      <div className="tooltip-hint">
-        {isFolder ? 'Click to select, double-click to open' : 'Click to select'}
-      </div>
+      <div className="tooltip-path">{title}</div>
+      {lines.map((line) => (
+        <div key={line}>{line}</div>
+      ))}
+      <div className="tooltip-hint">{hint}</div>
     </div>
+  );
+}
+
+/** The tooltip of a treemap tile. */
+export function Tooltip({ tree, catalog, node, x, y, onDismiss }: TooltipProps) {
+  const colour = colourLine(tree, catalog, node);
+  const lines = [exactAmount(node.total, tree.size.unit)];
+  if (colour) lines.push(colour);
+  if (node.hidden > 0) lines.push(`${node.hidden.toLocaleString('en-US')} deeper items not drawn`);
+  return (
+    <TooltipBox
+      x={x}
+      y={y}
+      title={node.path === '' ? 'Whole codebase' : node.path}
+      lines={lines}
+      hint={node.kind === 'directory' ? 'Click to select, double-click to open' : 'Click to select'}
+      onDismiss={onDismiss}
+    />
   );
 }

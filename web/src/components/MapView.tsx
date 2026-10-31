@@ -3,27 +3,22 @@ import { Treemap, type Pointed } from '../canvas/treemap/Treemap';
 import type { Catalog, Hidden, Tree } from '../generated/Answer';
 import type { Query } from '../generated/Query';
 import { exactAmount } from '../format';
+import { filterOf } from '../query';
 import { useAnswer } from '../useAnswer';
 import { useReportHidden } from '../useReportHidden';
-import { hasFilters, type Navigate, type UrlState } from '../urlState';
+import { type Navigate, type UrlState } from '../urlState';
 import { viewStateOf } from '../viewState';
+import { Empty } from './Empty';
 import { Legend } from './Legend';
 import { Tooltip } from './Tooltip';
 
 /** The tree query for a state; unset fields are left out so the server's defaults apply. */
 function treeQuery(state: UrlState): Query {
-  const filter: Extract<Query, { kind: 'tree' }>['filter'] = {
-    includeGenerated: state.includeGenerated,
-  };
-  if (state.path !== '') filter.path = state.path;
-  if (state.role !== null) filter.role = state.role;
-  if (state.concern !== null) filter.concern = state.concern;
-  if (state.language !== null) filter.language = state.language;
   const query: Extract<Query, { kind: 'tree' }> = {
     kind: 'tree',
     hierarchy: 'path',
     size: state.size,
-    filter,
+    filter: filterOf(state),
   };
   if (state.color !== null) query.color = state.color;
   return query;
@@ -61,29 +56,6 @@ function SelectionBar({
         </button>
       )}
     </p>
-  );
-}
-
-function Empty({ state, navigate }: Pick<MapProps, 'state' | 'navigate'>) {
-  return (
-    <div className="empty">
-      <p>No lines match these filters.</p>
-      {hasFilters(state) && (
-        <button
-          onClick={() => {
-            navigate({
-              role: null,
-              concern: null,
-              language: null,
-              includeGenerated: false,
-              selected: null,
-            });
-          }}
-        >
-          Clear filters
-        </button>
-      )}
-    </div>
   );
 }
 

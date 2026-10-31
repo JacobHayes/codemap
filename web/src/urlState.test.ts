@@ -1,15 +1,18 @@
 import fc from 'fast-check';
 import { expect, test } from 'vitest';
-import { DEFAULT_STATE, parseState, serializeState, type UrlState } from './urlState';
+import { AXES, DEFAULT_STATE, parseState, serializeState, type UrlState } from './urlState';
 
 const word = fc.stringMatching(/^[a-z][a-z0-9_.-]{0,8}$/);
 const stateArb: fc.Arbitrary<UrlState> = fc.record({
-  view: fc.constantFrom('map', 'areas'),
+  view: fc.constantFrom('map', 'xtab', 'areas'),
   path: fc.array(word, { maxLength: 4 }).map((parts) => parts.join('/')),
   role: fc.option(word, { nil: null }),
   concern: fc.option(word, { nil: null }),
   language: fc.option(word, { nil: null }),
+  kind: fc.option(word, { nil: null }),
   includeGenerated: fc.boolean(),
+  rows: fc.constantFrom(...AXES),
+  cols: fc.constantFrom(...AXES),
   size: word,
   color: fc.option(word, { nil: null }),
   selected: fc.option(word, { nil: null }),

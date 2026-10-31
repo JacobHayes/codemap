@@ -149,7 +149,7 @@ function Summary({
         {'. '}
         {hidden > 0 &&
           `${String(hidden)} more ${hidden === 1 ? 'area is' : 'areas are'} hidden by the drill path. `}
-        {hasFilters(state) && 'The role, concern and language filters apply to the map only. '}
+        {hasFilters(state) && 'The filters apply to the map and cross-tab only. '}
         Select a path to show it on the map.
       </p>
       {semantic !== '' && <p className="muted">{semantic}</p>}

@@ -34,7 +34,7 @@ for (const [name, spec] of Object.entries(STATES) as [ViewState, (typeof STATES)
         await page.goto(url);
         // The view's own marker: an expanded area has a ready evidence panel inside it too.
         await expect(page.locator('main [data-view][data-state="ready"]')).toBeVisible();
-        if (name !== 'treemap-empty' && !name.startsWith('area')) {
+        if (name.startsWith('treemap') && name !== 'treemap-empty') {
           await expect(page.locator('.treemap')).not.toHaveAttribute('data-tiles', '0');
         }
         await page.evaluate(() => document.fonts.ready);

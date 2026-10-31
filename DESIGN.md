@@ -99,7 +99,8 @@ self-hosted.
   the tile and names its path; click selects; double-click drills.
 - **Cross-tab heatmap.** Rows and columns are dimension values ordered by their totals; cells
   use the measure scale with the value printed where it fits. Margins show row and column
-  totals. Clicking a cell adds both values as filters.
+  totals. Clicking a cell adds both values as filters. The grid draws the 60 largest rows and 24
+  largest columns and says how many it left out.
 - **Area queue.** A ranked table of area cards; the count of areas hidden by filters or below
   the fold is always shown.
 - **Source viewer.** Server-highlighted lines with a gutter; finding ranges are row highlights

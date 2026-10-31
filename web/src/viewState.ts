@@ -13,6 +13,9 @@ export type ViewState =
   | 'treemap-ratio-colour'
   | 'treemap-tooltip'
   | 'treemap-empty'
+  | 'xtab'
+  | 'xtab-by-path'
+  | 'xtab-empty'
   | 'area-queue'
   | 'area-expanded';
 
@@ -21,6 +24,10 @@ export type Facts = { empty: boolean; tooltip: boolean; colourIsRatio: boolean }
 /** Names the state a page is in, strongest first. */
 export function viewStateOf(state: UrlState, facts: Facts): ViewState {
   if (state.view === 'areas') return state.area === null ? 'area-queue' : 'area-expanded';
+  if (state.view === 'xtab') {
+    if (facts.empty) return 'xtab-empty';
+    return state.rows === 'path' || state.cols === 'path' ? 'xtab-by-path' : 'xtab';
+  }
   if (facts.empty) return 'treemap-empty';
   if (facts.tooltip) return 'treemap-tooltip';
   if (state.color !== null) return facts.colourIsRatio ? 'treemap-ratio-colour' : 'treemap-colour';

@@ -39,6 +39,10 @@ export function plain(value: number): string {
   return String(Number(value.toPrecision(abs >= 100 ? 3 : 2)));
 }
 
+/** A count with its noun: "1 row", "5 rows". */
+export const counted = (n: number, noun: string): string =>
+  `${String(n)} ${noun}${n === 1 ? '' : 's'}`;
+
 /** An internal name in words: `test_share` and `testShare` become "test share". */
 export const words = (name: string): string =>
   name

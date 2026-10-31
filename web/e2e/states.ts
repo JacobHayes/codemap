@@ -27,6 +27,9 @@ export const STATES: Record<ViewState, StateSpec> = {
   },
   // Nothing in a codemap checkout is vendored Python.
   'treemap-empty': { url: () => '/?role=vendored&language=python' },
+  xtab: { url: () => '/?view=xtab' },
+  'xtab-by-path': { url: () => '/?view=xtab&rows=path&cols=language' },
+  'xtab-empty': { url: () => '/?view=xtab&role=vendored&language=python' },
   'area-queue': { url: () => '/?view=areas' },
   'area-expanded': {
     url: async (request) => {

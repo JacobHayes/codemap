@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { amount, compact, exactAmount, plain } from './format';
+import { amount, compact, counted, exactAmount, plain } from './format';
 
 test('a count is short, with its unit in words', () => {
   expect(amount(303_412, 'lines')).toBe('303k lines');
@@ -32,4 +32,10 @@ test('internal names read as words', async () => {
   const { words } = await import('./format');
   expect(words('excessLines')).toBe('excess lines');
   expect(words('test_to_prod_ratio')).toBe('test to prod ratio');
+});
+
+test('a count agrees with its noun', () => {
+  expect(counted(1, 'row')).toBe('1 row');
+  expect(counted(0, 'row')).toBe('0 rows');
+  expect(counted(5, 'column')).toBe('5 columns');
 });

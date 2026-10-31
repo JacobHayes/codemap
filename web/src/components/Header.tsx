@@ -1,7 +1,15 @@
 import type { Catalog, Hidden } from '../generated/Answer';
 import { compact } from '../format';
-import { FILTER_DIMENSIONS, type FilterDimension, type Navigate, type UrlState } from '../urlState';
+import {
+  AXES,
+  CATALOG_NAME,
+  FILTER_DIMENSIONS,
+  type FilterDimension,
+  type Navigate,
+  type UrlState,
+} from '../urlState';
 import { Link } from './Link';
+import { AXIS_NAMES } from './XtabGrid';
 
 type HeaderProps = {
   state: UrlState;
@@ -27,7 +35,11 @@ function Breadcrumb({ state, navigate }: Pick<HeaderProps, 'state' | 'navigate'>
           <li key={crumb.path}>
             <Link
               state={state}
-              patch={{ view: 'map', path: crumb.path, selected: null }}
+              patch={{
+                view: state.view === 'xtab' ? 'xtab' : 'map',
+                path: crumb.path,
+                selected: null,
+              }}
               navigate={navigate}
               current={i === crumbs.length - 1}
             >
@@ -55,6 +67,7 @@ function Tabs({ state, navigate, areaCount }: HeaderProps) {
   return (
     <div className="tabs" role="navigation" aria-label="Views">
       {tab('map', 'Map')}
+      {tab('xtab', 'Cross-tab')}
       {tab('areas', areaCount === null ? 'Areas' : `Areas (${String(areaCount)})`)}
     </div>
   );
@@ -104,7 +117,7 @@ function PopulationChip({
 function FilterBar({ state, navigate, catalog, hidden }: Omit<HeaderProps, 'areaCount'>) {
   const dimensions = FILTER_DIMENSIONS.map((name) => ({
     name,
-    values: catalog?.dimensions.find((d) => d.name === name)?.values ?? [],
+    values: catalog?.dimensions.find((d) => d.name === CATALOG_NAME[name])?.values ?? [],
   }));
   return (
     <div className="filters" role="group" aria-label="Filters">
@@ -150,16 +163,42 @@ function FilterBar({ state, navigate, catalog, hidden }: Omit<HeaderProps, 'area
   );
 }
 
+function AxisPicker({ state, navigate }: Pick<HeaderProps, 'state' | 'navigate'>) {
+  return (
+    <>
+      {(['rows', 'cols'] as const).map((field) => (
+        <label className="field" key={field}>
+          <span className="label">{field === 'rows' ? 'Rows' : 'Columns'}</span>
+          <select
+            value={state[field]}
+            onChange={(e) => {
+              navigate({ [field]: e.target.value });
+            }}
+          >
+            {AXES.map((axis) => (
+              <option key={axis} value={axis}>
+                {AXIS_NAMES[axis]}
+              </option>
+            ))}
+          </select>
+        </label>
+      ))}
+    </>
+  );
+}
+
 function MeasurePicker({
   state,
   navigate,
   catalog,
 }: Pick<HeaderProps, 'state' | 'navigate' | 'catalog'>) {
   const measures = catalog?.measures ?? [];
+  const crossTab = state.view === 'xtab';
   return (
     <div className="measures">
+      {crossTab && <AxisPicker state={state} navigate={navigate} />}
       <label className="field">
-        <span className="label">Size by</span>
+        <span className="label">{crossTab ? 'Measure' : 'Size by'}</span>
         <select
           value={state.size}
           onChange={(e) => {
@@ -175,22 +214,24 @@ function MeasurePicker({
             ))}
         </select>
       </label>
-      <label className="field">
-        <span className="label">Colour by</span>
-        <select
-          value={state.color ?? ''}
-          onChange={(e) => {
-            navigate({ color: e.target.value === '' ? null : e.target.value });
-          }}
-        >
-          <option value="">No colour</option>
-          {measures.map((m) => (
-            <option key={m.name} value={m.name}>
-              {m.description}
-            </option>
-          ))}
-        </select>
-      </label>
+      {!crossTab && (
+        <label className="field">
+          <span className="label">Colour by</span>
+          <select
+            value={state.color ?? ''}
+            onChange={(e) => {
+              navigate({ color: e.target.value === '' ? null : e.target.value });
+            }}
+          >
+            <option value="">No colour</option>
+            {measures.map((m) => (
+              <option key={m.name} value={m.name}>
+                {m.description}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
     </div>
   );
 }
@@ -211,7 +252,7 @@ export function Header(props: HeaderProps) {
           catalog={props.catalog}
           hidden={props.hidden}
         />
-        {props.state.view === 'map' && (
+        {props.state.view !== 'areas' && (
           <MeasurePicker state={props.state} navigate={props.navigate} catalog={props.catalog} />
         )}
       </div>
