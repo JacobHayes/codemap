@@ -44,6 +44,17 @@ pub fn baseline(root: &Path, files: usize) {
     }
 }
 
+/// Ordinary files spread over directories of three, to be the peers a directory stands out from.
+pub fn baseline_dirs(root: &Path, dirs: usize) {
+    for i in 0..dirs * 3 {
+        write(
+            root,
+            &format!("src/pkg{}/mod{i}.rs", i / 3),
+            &plain_functions(&format!("m{i}_"), 6),
+        );
+    }
+}
+
 pub fn indexed(root: &Path) -> Index {
     index(root).unwrap();
     Index::open(root).unwrap()

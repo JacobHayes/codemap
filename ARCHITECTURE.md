@@ -195,8 +195,11 @@ symbols) and a reason in words. It carries no verdict.
 An **area** is a subject with one or more findings. Its **opportunity** grows with the number of
 distinct detectors that agree and with the mass involved; confidence only breaks ties.
 
-Detectors compare the codebase with itself by default: outliers against its own distribution,
-concentrations against its own totals. Two project inputs adjust this:
+Detectors compare the codebase with itself by default, and a subject with its peers: a file
+against the files, a directory against the directories, a function against the functions. "Unusual"
+means a robust outlier (median and median absolute deviation) in that distribution, never a
+distance from a codebase-wide total, which one large test folder or generated schema would drag
+for everyone. Two project inputs adjust this:
 
 - **Rules** set a threshold on one measure at one granularity ("handling lines per function at
   least 100"). Rules are one generic detector driven by configuration.

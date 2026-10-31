@@ -3,13 +3,13 @@
 use codemap_core::{Answer, Query, SubjectKind, answer};
 
 use crate::common::{
-    areas, baseline, findings_of, handler_functions, indexed, plain_functions, write,
+    areas, baseline, baseline_dirs, findings_of, handler_functions, indexed, plain_functions, write,
 };
 
 #[test]
 fn composition_fires_on_a_directory_heavy_in_handling() {
     let dir = tempfile::tempdir().unwrap();
-    baseline(dir.path(), 20);
+    baseline_dirs(dir.path(), 20);
     for i in 0..3 {
         write(
             dir.path(),
@@ -29,9 +29,40 @@ fn composition_fires_on_a_directory_heavy_in_handling() {
             .any(|f| f.subject == "handlers" && f.subject_kind == SubjectKind::Directory)
     );
     let finding = handlers.iter().find(|f| f.subject == "handlers").unwrap();
-    assert!(finding.measures["share"] > 2.0 * finding.measures["codebaseShare"]);
+    assert!(finding.measures["share"] > finding.measures["peerMedian"] + 0.1);
     assert!(finding.measures["excessLines"] >= 50.0);
     assert!(!finding.evidence.is_empty());
+}
+
+#[test]
+fn composition_judges_against_peers_not_the_codebase_total() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline_dirs(dir.path(), 20);
+    // One comment-only schema holds most of the codebase's lines, so the codebase-wide comment
+    // share is high; it must not hide a file that is unusual among ordinary files.
+    let schema: String = (0..6000)
+        .map(|i| format!("// field {i} of the schema\n"))
+        .collect();
+    write(
+        dir.path(),
+        "schema/schema.rs",
+        &format!("{schema}fn schema() {{}}\n"),
+    );
+    let chatty: String = (0..80)
+        .map(|i| format!("// note {i} on the next lines\n"))
+        .collect();
+    write(
+        dir.path(),
+        "src/pkg0/chatty.rs",
+        &format!("{chatty}{}", plain_functions("c", 8)),
+    );
+    let index = indexed(dir.path());
+    let found = findings_of(&index, "composition");
+    assert!(
+        found
+            .iter()
+            .any(|f| f.subject == "src/pkg0/chatty.rs" && f.labels["category"] == "comments")
+    );
 }
 
 #[test]
@@ -47,7 +78,7 @@ fn composition_stays_quiet_on_a_uniform_codebase_and_on_tiny_files() {
 #[test]
 fn composition_measures_test_code_against_production_lines() {
     let dir = tempfile::tempdir().unwrap();
-    baseline(dir.path(), 20);
+    baseline_dirs(dir.path(), 20);
     // All test code, no production lines: outside the population, so no share.
     for i in 0..3 {
         write(
@@ -60,12 +91,12 @@ fn composition_measures_test_code_against_production_lines() {
     assert!(findings_of(&index, "composition").is_empty());
 
     // A little production code with a lot of tests beside it.
-    write(dir.path(), "pkg/src/a.rs", &plain_functions("a", 2));
+    write(dir.path(), "pkg/src/a.rs", &plain_functions("a", 8));
     for i in 0..3 {
         write(
             dir.path(),
             &format!("pkg/tests/t{i}.rs"),
-            &plain_functions(&format!("p{i}_"), 40),
+            &plain_functions(&format!("p{i}_"), 60),
         );
     }
     let index = indexed(dir.path());
@@ -77,7 +108,14 @@ fn composition_measures_test_code_against_production_lines() {
 #[test]
 fn size_fires_on_an_outlier_file_function_and_concentrated_directory() {
     let dir = tempfile::tempdir().unwrap();
-    baseline(dir.path(), 30);
+    baseline_dirs(dir.path(), 25);
+    for i in 0..4 {
+        write(
+            dir.path(),
+            &format!("big/huge{i}.rs"),
+            &plain_functions(&format!("huge{i}_"), 150),
+        );
+    }
     write(dir.path(), "big/huge.rs", &plain_functions("huge", 400));
     let long_body: String = (0..120).map(|i| format!("    let v{i} = {i};\n")).collect();
     write(

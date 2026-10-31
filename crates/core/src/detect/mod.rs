@@ -8,6 +8,7 @@ mod indirection;
 mod parallel;
 mod persist;
 mod rank;
+mod robust;
 mod rules;
 mod size;
 
