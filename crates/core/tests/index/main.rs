@@ -5,6 +5,7 @@
 )]
 
 mod common;
+mod ignored;
 mod incremental;
 mod languages;
 mod worktree;

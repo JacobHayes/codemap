@@ -15,6 +15,13 @@ use crate::store::STATE_DIR;
 
 const CONFIG_FILE: &str = "config.toml";
 
+/// Whether `path` is the config of the project at `root`: a change to it changes the index even
+/// though the file is not indexed.
+#[must_use]
+pub fn is_config(root: &Path, path: &Path) -> bool {
+    path == root.join(STATE_DIR).join(CONFIG_FILE)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     #[error("cannot read {path}: {source}")]

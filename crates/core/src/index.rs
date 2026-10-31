@@ -18,6 +18,11 @@ use crate::worktree::seed;
 /// Version-control directories are never part of the codebase, whatever the ignore files say.
 const SKIPPED_DIRS: [&str; 4] = [".git", ".jj", ".hg", ".svn"];
 
+/// Version-control and state directories are never indexed.
+pub(crate) fn is_skipped(name: &str) -> bool {
+    name == STATE_DIR || SKIPPED_DIRS.contains(&name)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum IndexError {
     #[error("cannot walk the tree: {0}")]
@@ -205,10 +210,7 @@ fn discover(root: &Path) -> Result<Vec<String>, IndexError> {
         .require_git(false)
         .follow_links(false)
         .sort_by_file_path(Ord::cmp)
-        .filter_entry(|entry| {
-            let name = entry.file_name().to_string_lossy();
-            name != STATE_DIR && !SKIPPED_DIRS.contains(&name.as_ref())
-        })
+        .filter_entry(|entry| !is_skipped(&entry.file_name().to_string_lossy()))
         .build();
     for entry in walker {
         let entry = entry?;

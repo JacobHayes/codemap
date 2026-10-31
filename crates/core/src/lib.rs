@@ -3,7 +3,9 @@
 
 mod config;
 mod detect;
+mod event;
 mod facts;
+mod ignored;
 mod index;
 mod measure;
 mod query;
@@ -14,9 +16,11 @@ mod syntax;
 mod text;
 mod worktree;
 
-pub use config::{Acknowledgement, Config, ConfigError, Granularity, Rule};
+pub use config::{Acknowledgement, Config, ConfigError, Granularity, Rule, is_config};
 pub use detect::{Area, DETECTORS, Detector, Evidence, Finding, SubjectKind};
+pub use event::Refresh;
 pub use facts::{FileFacts, LineFact, RefFact, SymbolFact, SymbolKind, extract};
+pub use ignored::is_indexed;
 pub use index::{IndexError, IndexReport, index};
 pub use measure::{
     Base, Filter, Measure, MeasureDef, MeasureRef, Term, catalog as measure_catalog,

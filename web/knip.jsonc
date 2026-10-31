@@ -3,6 +3,8 @@
   "entry": ["src/palette.ts", "src/canvas/treemap/Treemap.tsx", "e2e/*.spec.ts"],
   "project": ["src/**/*.{ts,tsx}", "e2e/**/*.ts"],
   // The wire types are generated whole from the Rust ones; views use them as they land.
+  // Events.ts has no reader until the UI subscribes to refreshes.
+  "ignore": ["src/generated/Events.ts"],
   "ignoreIssues": { "src/generated/**": ["types"] },
   "ignoreDependencies": ["prettier"],
 }
