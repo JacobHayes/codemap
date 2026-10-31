@@ -203,7 +203,7 @@ describe('layout labels and chains', () => {
     expect(named.every((l) => l.value === null)).toBe(true);
   });
 
-  it('marks directories as drillable, files not', () => {
+  it('marks directories and files as openable', () => {
     const s = layout(
       payload([
         [0, null, 'root', 0, null],
@@ -215,7 +215,7 @@ describe('layout labels and chains', () => {
       300,
     );
     for (let i = 1; i < s.count; i++) {
-      expect(s.canDrill[i]).toBe(s.nodeId[i] === 1 ? 1 : 0);
+      expect(s.canOpen[i]).toBe(1);
     }
   });
 

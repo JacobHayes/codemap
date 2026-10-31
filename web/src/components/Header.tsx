@@ -39,6 +39,8 @@ function Breadcrumb({ state, navigate }: Pick<HeaderProps, 'state' | 'navigate'>
                 view: state.view === 'xtab' ? 'xtab' : 'map',
                 path: crumb.path,
                 selected: null,
+                source: null,
+                lines: null,
               }}
               navigate={navigate}
               current={i === crumbs.length - 1}
@@ -56,9 +58,9 @@ function Tabs({ state, navigate, areaCount }: HeaderProps) {
   const tab = (view: UrlState['view'], text: string) => (
     <Link
       state={state}
-      patch={{ view }}
+      patch={{ view, source: null, lines: null }}
       navigate={navigate}
-      current={state.view === view}
+      current={state.source === null && state.view === view}
       className="tab"
     >
       {text}
@@ -245,17 +247,19 @@ export function Header(props: HeaderProps) {
         <Breadcrumb state={props.state} navigate={props.navigate} />
         <Tabs {...props} />
       </div>
-      <div className="header-row">
-        <FilterBar
-          state={props.state}
-          navigate={props.navigate}
-          catalog={props.catalog}
-          hidden={props.hidden}
-        />
-        {props.state.view !== 'areas' && (
-          <MeasurePicker state={props.state} navigate={props.navigate} catalog={props.catalog} />
-        )}
-      </div>
+      {props.state.source === null && (
+        <div className="header-row">
+          <FilterBar
+            state={props.state}
+            navigate={props.navigate}
+            catalog={props.catalog}
+            hidden={props.hidden}
+          />
+          {props.state.view !== 'areas' && (
+            <MeasurePicker state={props.state} navigate={props.navigate} catalog={props.catalog} />
+          )}
+        </div>
+      )}
     </header>
   );
 }

@@ -32,6 +32,10 @@ export type UrlState = {
   selected: string | null;
   /** The area unfolded in the queue, by subject. */
   area: string | null;
+  /** The file open in the source viewer, which takes the place of the view; relative to the root. */
+  source: string | null;
+  /** The lines of that file shown, as `a-b`, `a` or `a-`; the start of the file when absent. */
+  lines: string | null;
 };
 
 export const DEFAULT_STATE: UrlState = {
@@ -48,6 +52,8 @@ export const DEFAULT_STATE: UrlState = {
   color: null,
   selected: null,
   area: null,
+  source: null,
+  lines: null,
 };
 
 export const FILTER_DIMENSIONS = ['role', 'concern', 'language', 'kind'] as const;
@@ -76,6 +82,8 @@ const KEYS: Record<keyof UrlState, string> = {
   color: 'color',
   selected: 'sel',
   area: 'area',
+  source: 'source',
+  lines: 'lines',
 };
 
 const viewOf = (text: string | null): View => (text === 'areas' || text === 'xtab' ? text : 'map');
@@ -100,6 +108,8 @@ export function parseState(search: string): UrlState {
     color: text('color'),
     selected: text('selected'),
     area: text('area'),
+    source: text('source'),
+    lines: text('lines'),
   };
 }
 

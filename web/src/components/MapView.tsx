@@ -55,6 +55,15 @@ function SelectionBar({
           Open
         </button>
       )}
+      {node.kind === 'file' && (
+        <button
+          onClick={() => {
+            navigate({ source: node.path, lines: null });
+          }}
+        >
+          View source
+        </button>
+      )}
     </p>
   );
 }
@@ -98,7 +107,9 @@ export function MapView({ state, navigate, catalog, onHidden }: MapProps) {
               navigate({ selected: tree.nodes[id ?? -1]?.path ?? null }, 'replace');
             }}
             onDrill={(id) => {
-              navigate({ path: tree.nodes[id]?.path ?? state.path, selected: null });
+              const drilled = tree.nodes[id];
+              if (drilled?.kind === 'file') navigate({ source: drilled.path, lines: null });
+              else navigate({ path: drilled?.path ?? state.path, selected: null });
             }}
             onUp={() => {
               if (state.path !== '') navigate({ path: parentOf(state.path), selected: state.path });

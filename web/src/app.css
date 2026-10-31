@@ -442,3 +442,115 @@
 .xtab-grid th.total {
   border-left: 1px solid var(--color-edge);
 }
+
+/* ---- source viewer ---- */
+.source {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.source-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  background: var(--color-band);
+  border-bottom: 1px solid var(--color-edge);
+}
+.source-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.source-body {
+  min-height: 0;
+  overflow: auto;
+  background: var(--color-surface);
+}
+.source-findings {
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--type-text-size);
+}
+.source-findings summary {
+  cursor: pointer;
+  font: 500 var(--type-label-size) / 1.4 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-secondary);
+}
+.source-findings ul {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+.source-findings a {
+  font-weight: 600;
+}
+.code {
+  border-collapse: collapse;
+  min-width: 100%;
+}
+.code td {
+  padding: 0 var(--space-3);
+  vertical-align: top;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.code .gutter {
+  position: sticky;
+  left: 0;
+  width: 1%;
+  padding-inline: var(--space-4) var(--space-3);
+  color: var(--color-secondary);
+  background: var(--color-sunken);
+  border-right: 1px solid var(--color-border);
+  user-select: none;
+}
+.code .marks {
+  width: 1%;
+  min-width: 12ch;
+  padding-inline: var(--space-3);
+  color: var(--color-secondary);
+  font-size: var(--type-label-size);
+  white-space: nowrap;
+}
+.code .text {
+  white-space: pre;
+  tab-size: 4;
+  width: 100%;
+}
+.code .links {
+  white-space: nowrap;
+  font-family: var(--font-body);
+  font-size: var(--type-label-size);
+  padding-inline: var(--space-4);
+  text-align: right;
+  position: sticky;
+  right: 0;
+  background: var(--color-surface);
+}
+.code tr.flagged .links {
+  background-image: linear-gradient(var(--color-change), var(--color-change));
+}
+.code tr.flagged {
+  background: var(--color-change);
+}
+.code tr.flagged .gutter {
+  box-shadow: inset 3px 0 0 var(--color-warning);
+}
+.paging {
+  display: flex;
+  gap: var(--space-2);
+}
+.paging .button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}

@@ -1,5 +1,6 @@
 import type { Area, AreaDetail, AreaList, Finding } from '../generated/Answer';
 import { amount, words } from '../format';
+import { around, formatLines } from '../source';
 import { useAnswer } from '../useAnswer';
 import { hasFilters, type Navigate, type UrlState } from '../urlState';
 import { Link } from './Link';
@@ -43,7 +44,10 @@ function FindingView({
             <li key={`${e.path}:${String(e.startLine)}`}>
               <Link
                 state={state}
-                patch={{ view: 'map', path: parentOf(e.path), selected: e.path, area: null }}
+                patch={{
+                  source: e.path,
+                  lines: formatLines(around(e.startLine, e.endLine)),
+                }}
                 navigate={navigate}
               >
                 {e.path}
@@ -104,7 +108,21 @@ function AreaCard({ area, state, navigate }: { area: Area } & Common) {
         <Link state={state} patch={mapPatch(area)} navigate={navigate} className="area-path mono">
           {area.subject}
         </Link>
-        <span className="area-mass">{amount(area.massLines, 'lines')}</span>
+        <span className="area-mass">
+          {amount(area.massLines, 'lines')}
+          {area.subjectKind === 'file' || area.subjectKind === 'function' ? (
+            <>
+              {' '}
+              <Link
+                state={state}
+                patch={{ source: area.subject.split('::')[0] ?? area.subject, lines: null }}
+                navigate={navigate}
+              >
+                Source
+              </Link>
+            </>
+          ) : null}
+        </span>
       </div>
       <div className="card-body">
         <p className="area-reason">{area.reason}</p>

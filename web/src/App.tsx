@@ -3,6 +3,7 @@ import type { Hidden } from './generated/Answer';
 import { AreaQueue } from './components/AreaQueue';
 import { Header } from './components/Header';
 import { MapView } from './components/MapView';
+import { SourceView } from './components/SourceView';
 import { XtabView } from './components/XtabView';
 import { RevisionContext, useServerRevision } from './revision';
 import { useAnswer } from './useAnswer';
@@ -33,11 +34,16 @@ function Shell() {
         areaCount={areas.state === 'ready' ? areas.answer.matching : null}
       />
       <main className="workspace">
-        {state.view === 'areas' && <AreaQueue state={state} navigate={navigate} />}
-        {state.view === 'map' && (
+        {state.source !== null && (
+          <SourceView state={state} navigate={navigate} path={state.source} />
+        )}
+        {state.source === null && state.view === 'areas' && (
+          <AreaQueue state={state} navigate={navigate} />
+        )}
+        {state.source === null && state.view === 'map' && (
           <MapView state={state} navigate={navigate} catalog={catalog} onHidden={setHidden} />
         )}
-        {state.view === 'xtab' && (
+        {state.source === null && state.view === 'xtab' && (
           <XtabView state={state} navigate={navigate} catalog={catalog} onHidden={setHidden} />
         )}
       </main>

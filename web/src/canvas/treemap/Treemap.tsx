@@ -84,7 +84,7 @@ function useKeys(
         x: (r?.left ?? 0) + (scene.x0[next] ?? 0) + 8,
         y: (r?.top ?? 0) + (scene.y1[next] ?? 0) - 8,
       });
-    } else if (e.key === 'Enter' && selected !== null && scene.canDrill[selected]) {
+    } else if (e.key === 'Enter' && selected !== null && scene.canOpen[selected]) {
       act.onDrill(scene.nodeId[selected] ?? -1);
     } else if (e.key === 'Backspace') {
       act.onUp();
@@ -132,7 +132,7 @@ export function Treemap({ tree, selectedId, onPoint, onSelect, onDrill, onUp }: 
       ref={box}
       className="treemap"
       role="group"
-      aria-label="Treemap. Arrow keys move between tiles, Enter opens a folder, Backspace goes up, Escape closes the tooltip."
+      aria-label="Treemap. Arrow keys move between tiles, Enter opens a folder or a file, Backspace goes up, Escape closes the tooltip."
       tabIndex={0}
       style={{ position: 'relative', width: '100%', height: '100%' }}
       data-tiles={scene.count}
@@ -161,7 +161,7 @@ export function Treemap({ tree, selectedId, onPoint, onSelect, onDrill, onUp }: 
         }}
         onDoubleClick={(e) => {
           const i = at(e);
-          if (i !== null && scene.canDrill[i]) onDrill(scene.nodeId[i] ?? -1);
+          if (i !== null && scene.canOpen[i]) onDrill(scene.nodeId[i] ?? -1);
         }}
       />
     </div>

@@ -8,6 +8,26 @@ export type StateSpec = {
   act?: (page: Page) => Promise<void>;
 };
 
+type Located = { path: string; startLine: number; endLine: number; area: string };
+
+/** A finding's evidence in the served project, preferring one near the top of its file so the
+ * first page of the file shows it. */
+export async function evidence(request: APIRequestContext): Promise<Located> {
+  const ask = async (data: object): Promise<unknown> =>
+    (await request.post('/api/query', { data })).json();
+  const { areas } = (await ask({ kind: 'areas', top: 20 })) as { areas: { subject: string }[] };
+  const found: Located[] = [];
+  for (const { subject } of areas) {
+    const detail = (await ask({ kind: 'area', subject })) as {
+      findings: { area: string; evidence: Omit<Located, 'area'>[] }[];
+    };
+    found.push(...detail.findings.flatMap((f) => f.evidence.map((e) => ({ ...e, area: f.area }))));
+  }
+  const chosen = found.find((e) => e.endLine < 250) ?? found[0];
+  if (chosen === undefined) throw new Error('the served project has no evidence to open');
+  return chosen;
+}
+
 // One entry per view state, keyed by the app's own list of them: a new state does not compile
 // until it is pictured here.
 export const STATES: Record<ViewState, StateSpec> = {
@@ -30,6 +50,15 @@ export const STATES: Record<ViewState, StateSpec> = {
   xtab: { url: () => '/?view=xtab' },
   'xtab-by-path': { url: () => '/?view=xtab&rows=path&cols=language' },
   'xtab-empty': { url: () => '/?view=xtab&role=vendored&language=python' },
+  'source-file': {
+    url: async (request) => `/?source=${(await evidence(request)).path}`,
+  },
+  'source-range': {
+    url: async (request) => {
+      const { path, startLine, endLine } = await evidence(request);
+      return `/?source=${path}&lines=${String(Math.max(1, startLine - 20))}-${String(endLine + 20)}`;
+    },
+  },
   'area-queue': { url: () => '/?view=areas' },
   'area-expanded': {
     url: async (request) => {

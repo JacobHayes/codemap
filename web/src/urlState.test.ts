@@ -17,6 +17,8 @@ const stateArb: fc.Arbitrary<UrlState> = fc.record({
   color: fc.option(word, { nil: null }),
   selected: fc.option(word, { nil: null }),
   area: fc.option(word, { nil: null }),
+  source: fc.option(word, { nil: null }),
+  lines: fc.option(word, { nil: null }),
 });
 
 test('the stock view is the bare address', () => {

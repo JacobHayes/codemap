@@ -17,8 +17,8 @@ export type Scene = {
   parent: Int32Array;
   /** Nothing is drawn inside this tile: a leaf, or a directory aggregated at the depth limit. */
   isTile: Uint8Array;
-  /** The tile stands for a directory, so drilling into it shows its contents. */
-  canDrill: Uint8Array;
+  /** The tile stands for a directory or a file, so opening it shows its contents or its source. */
+  canOpen: Uint8Array;
   colorStep: Int16Array; // -1: no value, drawn neutral
   x0: Float64Array;
   y0: Float64Array;
@@ -159,7 +159,7 @@ function toScene(
     nodeId: new Int32Array(keptCount),
     parent: new Int32Array(keptCount),
     isTile: new Uint8Array(keptCount),
-    canDrill: new Uint8Array(keptCount),
+    canOpen: new Uint8Array(keptCount),
     colorStep: new Int16Array(keptCount),
     x0: new Float64Array(keptCount),
     y0: new Float64Array(keptCount),
@@ -174,7 +174,7 @@ function toScene(
     scene.nodeId[i] = src?.id ?? -1;
     scene.parent[i] = n.parent ? (slot.get(n.parent) ?? -1) : -1;
     scene.isTile[i] = n.children ? 0 : 1;
-    scene.canDrill[i] = src?.kind === 'directory' ? 1 : 0;
+    scene.canOpen[i] = src?.kind === 'directory' || src?.kind === 'file' ? 1 : 0;
     scene.colorStep[i] = src?.colorStep ?? -1;
     scene.x0[i] = n.x0;
     scene.y0[i] = n.y0;

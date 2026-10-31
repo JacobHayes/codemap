@@ -96,15 +96,16 @@ self-hosted.
   few levels below the current root are drawn; deeper levels aggregate into their ancestor until
   you drill in. Area is the size measure; fill is the colour measure on its scale. A tile big
   enough shows its name and value at the 12px floor; smaller tiles show nothing. Hover outlines
-  the tile and names its path; click selects; double-click drills.
+  the tile and names its path; click selects; double-click drills into a folder or opens a file's source.
 - **Cross-tab heatmap.** Rows and columns are dimension values ordered by their totals; cells
   use the measure scale with the value printed where it fits. Margins show row and column
   totals. Clicking a cell adds both values as filters. The grid draws the 60 largest rows and 24
   largest columns and says how many it left out.
 - **Area queue.** A ranked table of area cards; the count of areas hidden by filters or below
   the fold is always shown.
-- **Source viewer.** Server-highlighted lines with a gutter; finding ranges are row highlights
-  with links back to the area.
+- **Source viewer.** Lines with a gutter of numbers and, where they change, role and concern;
+  finding ranges are row highlights with links back to the area, and a long file pages by the
+  answer's `more`. Syntax highlighting waits for the server to send token spans.
 - **Code city** (later). The treemap's layout as a ground plan; height and colour are measures.
   It is a projection of the same data, never a separate system.
 
