@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS symbols (
     exact_hash UBIGINT, minhash BLOB);
 CREATE TABLE IF NOT EXISTS refs (
     path VARCHAR, line UINTEGER, name VARCHAR, kind VARCHAR, symbol VARCHAR);
+CREATE TABLE IF NOT EXISTS \"similar\" (a VARCHAR, b VARCHAR, kind VARCHAR, score DOUBLE);
 CREATE TABLE IF NOT EXISTS findings (
     detector VARCHAR, subject VARCHAR, subject_kind VARCHAR, area VARCHAR, reason VARCHAR,
     mass_lines DOUBLE, confidence DOUBLE, measures VARCHAR, labels VARCHAR, facts VARCHAR, evidence VARCHAR,
@@ -45,7 +46,7 @@ CREATE OR REPLACE VIEW line_facts AS
 /// Tables holding per-file rows, keyed by `path`.
 const FILE_TABLES: [&str; 4] = ["lines", "symbols", "refs", "files"];
 /// Tables the analyses and detectors rewrite from the whole index.
-const DERIVED_TABLES: [&str; 2] = ["findings", "areas"];
+const DERIVED_TABLES: [&str; 3] = ["similar", "findings", "areas"];
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -143,7 +144,7 @@ impl Store {
             .execute_batch("DROP VIEW IF EXISTS line_facts")?;
         for table in FILE_TABLES.into_iter().chain(DERIVED_TABLES) {
             self.connection
-                .execute_batch(&format!("DROP TABLE IF EXISTS {table}"))?;
+                .execute_batch(&format!("DROP TABLE IF EXISTS \"{table}\""))?;
         }
         Ok(self.connection.execute_batch(SCHEMA)?)
     }

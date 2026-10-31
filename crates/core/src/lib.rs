@@ -12,6 +12,7 @@ mod measure;
 mod query;
 mod reader;
 mod role;
+mod similarity;
 mod store;
 mod syntax;
 mod text;

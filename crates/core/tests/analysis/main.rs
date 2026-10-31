@@ -12,3 +12,4 @@
 mod common;
 mod detectors;
 mod queries;
+mod similarity;

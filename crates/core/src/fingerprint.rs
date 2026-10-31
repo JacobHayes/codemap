@@ -98,6 +98,14 @@ const SEEDS: [u64; MINHASH_LEN] = {
     seeds
 };
 
+/// The share of hashes two signatures agree on: an estimate of the Jaccard similarity of the
+/// shingle sets they summarise.
+pub(crate) fn jaccard(a: &[u32; MINHASH_LEN], b: &[u32; MINHASH_LEN]) -> f64 {
+    let equal = a.iter().zip(b).filter(|(x, y)| x == y).count();
+    f64::from(u32::try_from(equal).unwrap_or(u32::MAX))
+        / f64::from(u32::try_from(MINHASH_LEN).unwrap_or(u32::MAX))
+}
+
 /// FNV-1a over bytes: cheap, and stable across runs and platforms.
 fn hash_bytes(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xCBF2_9CE4_8422_2325, |hash, &byte| {
@@ -198,8 +206,7 @@ mod tests {
     }
 
     fn similarity(a: &Fingerprint, b: &Fingerprint) -> f64 {
-        let equal = a.minhash.iter().zip(&b.minhash).filter(|(x, y)| x == y);
-        f64::from(u32::try_from(equal.count()).unwrap()) / 64.0
+        jaccard(&a.minhash, &b.minhash)
     }
 
     #[test]

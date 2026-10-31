@@ -12,6 +12,7 @@ use crate::config::{Config, ConfigError, RoleOverrides};
 use crate::detect::{detect, rank};
 use crate::facts::{FileFacts, TOKEN_ENCODING, extract};
 use crate::reader::{Index, QueryError};
+use crate::similarity;
 use crate::store::{STATE_DIR, Store, StoreError};
 use crate::worktree::seed;
 
@@ -172,7 +173,7 @@ impl Index {
         self.analyse(config, build_id)
     }
 
-    /// Runs the detectors and ranking over the whole index, unless nothing they read has changed.
+    /// Runs the analyses, the detectors and ranking over the whole index, unless nothing they read has changed.
     fn analyse(&self, config: &Config, build_id: &str) -> Result<(), IndexError> {
         let mut hasher = blake3::Hasher::new();
         hasher.update(build_id.as_bytes());
@@ -185,6 +186,7 @@ impl Index {
         if self.store().meta("analysis")?.as_deref() == Some(key.as_str()) {
             return Ok(());
         }
+        similarity::run(self)?;
         let mut findings = detect(self, config)?;
         let areas = rank(&mut findings, config);
         self.save_analysis(&findings, &areas)?;
