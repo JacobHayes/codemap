@@ -24,7 +24,9 @@ fix roles once before trusting the areas.
    deserve a look.
 2. For each role, find its biggest files: `codemap tree --role <role> --depth 2`, then
    narrow with `--path <dir>`. Look for generated code with no marker, fixtures that are not
-   tests, copied-in third-party code.
+   tests, copied-in third-party code. Test doubles and fakes that live outside test
+   directories (a `FakeHost` in `src/`) belong in `[roles]` as `test`, or they count as
+   production implementations.
 3. Record fixes in `.codemap/config.toml`. Keys are gitignore-style globs, values are role
    names; the first match wins:
 
