@@ -86,7 +86,8 @@ re-extracts every file; cached model answers survive, because their keys do not 
 build.
 
 **Serving keeps it fresh.** `codemap serve` indexes on start, watches the tree, re-indexes
-changed files after a short quiet period, and tells open pages to refresh.
+changed files after a short quiet period, and tells open pages to refresh. A re-index is one
+transaction, so a request reads the whole previous state or the whole new one.
 
 ## Data model
 
@@ -235,7 +236,8 @@ surfaces cannot drift.
   discover them.
 - **HTTP.** `POST /api/query` taking a `Query` and returning an `Answer`. Its only client is the
   bundled UI, whose TypeScript types are generated from the Rust types, so a typed RPC needs no
-  route table or OpenAPI document.
+  route table or OpenAPI document. `GET /api/events` is a server-sent stream of `Refresh`
+  events: the current revision on connecting, then one per completed re-index.
 - **Skill.** A plain Markdown skill that teaches any agent the triage workflow: overview, top
   areas, drill in, investigate with its own tools.
 

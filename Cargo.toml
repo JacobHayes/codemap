@@ -26,8 +26,8 @@ ts-rs = { version = "12.0.1", default-features = false, features = ["serde-compa
 clap = { version = "4.6.7", default-features = false, features = ["derive", "help", "std", "usage", "error-context"] }
 # The HTTP server behind `codemap serve`: routing, JSON bodies, HTTP/1 on tokio.
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
-# The async runtime axum runs on.
-tokio = { version = "1.54.1", default-features = false, features = ["macros", "net", "rt-multi-thread"] }
+# The async runtime axum runs on (timers keep event streams alive; sync carries revisions).
+tokio = { version = "1.54.1", default-features = false, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 # Embeds the built web app in the binary (debug builds too, so the browser tests run the real thing).
 rust-embed = { version = "8.13.0", default-features = false, features = ["debug-embed", "mime-guess"] }
 # Drives the router in tests without a socket.

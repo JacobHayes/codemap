@@ -3,5 +3,6 @@
 mod cli;
 mod render;
 mod serve;
+mod watch;
 
 pub use cli::run;
