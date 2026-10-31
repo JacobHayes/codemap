@@ -38,3 +38,10 @@ export function plain(value: number): string {
   if (abs >= 1000) return compact(value);
   return String(Number(value.toPrecision(abs >= 100 ? 3 : 2)));
 }
+
+/** An internal name in words: `test_share` and `testShare` become "test share". */
+export const words = (name: string): string =>
+  name
+    .replaceAll('_', ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase();

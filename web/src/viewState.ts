@@ -1,0 +1,29 @@
+import { hasFilters, type UrlState } from './urlState';
+
+// Every state the page can be in that looks different. The browser walk pictures each one, and its
+// table is keyed by this type, so a new state does not compile until it is listed (PRACTICES,
+// Testing).
+export type ViewState =
+  | 'treemap-root'
+  | 'treemap-drilled'
+  | 'treemap-selected'
+  | 'treemap-filtered'
+  | 'treemap-colour'
+  | 'treemap-ratio-colour'
+  | 'treemap-tooltip'
+  | 'treemap-empty'
+  | 'area-queue'
+  | 'area-expanded';
+
+export type Facts = { empty: boolean; tooltip: boolean; colourIsRatio: boolean };
+
+/** Names the state a page is in, strongest first. */
+export function viewStateOf(state: UrlState, facts: Facts): ViewState {
+  if (state.view === 'areas') return state.area === null ? 'area-queue' : 'area-expanded';
+  if (facts.empty) return 'treemap-empty';
+  if (facts.tooltip) return 'treemap-tooltip';
+  if (state.color !== null) return facts.colourIsRatio ? 'treemap-ratio-colour' : 'treemap-colour';
+  if (hasFilters(state)) return 'treemap-filtered';
+  if (state.path !== '') return 'treemap-drilled';
+  return state.selected === null ? 'treemap-root' : 'treemap-selected';
+}

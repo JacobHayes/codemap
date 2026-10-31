@@ -27,3 +27,9 @@ test('a ratio keeps two or three significant figures', () => {
   expect(plain(12.7)).toBe('13');
   expect(plain(0)).toBe('0');
 });
+
+test('internal names read as words', async () => {
+  const { words } = await import('./format');
+  expect(words('excessLines')).toBe('excess lines');
+  expect(words('test_to_prod_ratio')).toBe('test to prod ratio');
+});

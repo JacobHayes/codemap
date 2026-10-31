@@ -12,7 +12,9 @@ import { LABEL_FONT, type Scene } from './layout';
 // pixels so neighbouring tiles leave an even gutter.
 function fillOf(scene: Scene, theme: Theme, i: number, steps: Swatch[]): Swatch {
   const step = scene.colorStep[i] ?? -1;
-  if (step >= 0) return steps[Math.min(step, steps.length - 1)] ?? neutralSwatch('leaf', theme);
+  // A group keeps its neutral tone, so nesting reads from the tiles' colours against it.
+  if (step >= 0 && scene.isTile[i])
+    return steps[Math.min(step, steps.length - 1)] ?? neutralSwatch('leaf', theme);
   return neutralSwatch(scene.isTile[i] ? 'leaf' : 'group', theme);
 }
 

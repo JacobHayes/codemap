@@ -35,7 +35,7 @@ export const LABEL_PX = 12;
 export const CHAR_PX = LABEL_PX * 0.6;
 export const LABEL_FONT = `500 ${String(LABEL_PX)}px "IBM Plex Mono", ui-monospace, monospace`;
 const LABEL_PAD_PX = 6;
-export const LINE_PX = 16;
+const LINE_PX = 16;
 const NAME_CHARS_MIN = 6;
 // Tiles under this size are not drawn; pointing at their place means the group around them.
 const VISIBLE_PX = 3;

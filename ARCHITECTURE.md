@@ -234,9 +234,9 @@ surfaces cannot drift.
   with `--json`. Paths are relative to the root.
 - **MCP.** One tool per query, same arguments, same envelope; one tool each is how agents
   discover them.
-- **HTTP.** `POST /api/query` taking a `Query` and returning an `Answer`. Its only client is the
-  bundled UI, whose TypeScript types are generated from the Rust types, so a typed RPC needs no
-  route table or OpenAPI document. `GET /api/events` is a server-sent stream of `Refresh`
+- **HTTP.** `POST /api/query` taking a `Query` and returning the `Answer` in its versioned
+  envelope. Its only client is the bundled UI, whose TypeScript types are generated from the Rust
+  types, so a typed RPC needs no route table or OpenAPI document. `GET /api/events` is a server-sent stream of `Refresh`
   events: the current revision on connecting, then one per completed re-index.
 - **Skill.** A plain Markdown skill that teaches any agent the triage workflow: overview, top
   areas, drill in, investigate with its own tools.

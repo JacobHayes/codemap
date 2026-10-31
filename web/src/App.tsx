@@ -1,48 +1,38 @@
-import { useEffect, useState } from 'react';
-import { ask } from './api';
-import type { Envelope } from './generated/Answer';
-
-type Load = { state: 'loading' } | { state: 'failed' } | { state: 'ready'; answer: Envelope };
-
-function useOverview(): Load {
-  const [load, setLoad] = useState<Load>({ state: 'loading' });
-  useEffect(() => {
-    ask({ kind: 'overview' }).then(
-      (answer) => {
-        setLoad({ state: 'ready', answer });
-      },
-      () => {
-        setLoad({ state: 'failed' });
-      },
-    );
-  }, []);
-  return load;
-}
-
-function describe(load: Load): string {
-  if (load.state === 'loading') return 'Loading';
-  if (load.state === 'failed') return 'The server did not answer';
-  const { answer } = load;
-  if (answer.kind !== 'overview') return 'The server answered something else';
-  const { files, lines } = answer.totals;
-  return `${files.toLocaleString('en')} files, ${lines.toLocaleString('en')} lines`;
-}
+import { AreaQueue } from './components/AreaQueue';
+import { Header } from './components/Header';
+import { MapView } from './components/MapView';
+import { RevisionContext, useServerRevision } from './revision';
+import { useAnswer } from './useAnswer';
+import { useUrlState } from './urlState';
 
 export function App() {
-  const load = useOverview();
+  const revision = useServerRevision();
+  return (
+    <RevisionContext value={revision}>
+      <Shell />
+    </RevisionContext>
+  );
+}
+
+function Shell() {
+  const [state, navigate] = useUrlState();
+  const catalogLoad = useAnswer({ kind: 'catalog' }, 'catalog');
+  const catalog = catalogLoad.state === 'ready' ? catalogLoad.answer : null;
+  const areas = useAnswer({ kind: 'areas' }, 'areas');
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>codemap</h1>
-        <span className="label">code mass and structure</span>
-      </header>
+      <Header
+        state={state}
+        navigate={navigate}
+        catalog={catalog}
+        areaCount={areas.state === 'ready' ? areas.answer.matching : null}
+      />
       <main className="workspace">
-        <section className="panel">
-          <div className="label">Overview</div>
-          <p data-testid="overview" data-state={load.state}>
-            {describe(load)}
-          </p>
-        </section>
+        {state.view === 'areas' ? (
+          <AreaQueue state={state} navigate={navigate} />
+        ) : (
+          <MapView state={state} navigate={navigate} catalog={catalog} />
+        )}
       </main>
     </div>
   );
