@@ -8,5 +8,10 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[dependencies]
+tree-sitter.workspace = true
+tree-sitter-python.workspace = true
+tree-sitter-rust.workspace = true
+
 [lints]
 workspace = true
