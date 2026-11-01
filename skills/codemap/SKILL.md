@@ -58,6 +58,16 @@ fix roles once before trusting the areas.
    group while its copies are edited or its sites come and go. A `path` covers a group only when
    every member lies under it.
 
+To find duplicates that share intent in different words, add an `[inference]` table and put
+the key in the environment (OpenRouter's by default). Use Jev as the decision model; it separates
+copies from look-alikes well and costs a few cents per thousand candidates:
+
+```toml
+[inference]
+embedding_model = "qwen/qwen3-embedding-8b"
+decision_model = "typesafe/jev-1.14"
+```
+
 Commit `.codemap/config.toml` with the project; it holds facts about the project, not about
 your session.
 

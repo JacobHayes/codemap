@@ -1,5 +1,5 @@
-//! Calls to models: one OpenAI-compatible client for embeddings and chat completions, and the
-//! [`DecisionModel`] trait the analyses ask typed questions through.
+//! Calls to models: one OpenAI-compatible client for embeddings, and `OpenRouter`'s Decisions API
+//! for the typed yes/no questions the analyses ask.
 //!
 //! Nothing here decides what to ask or caches an answer; analyses do, so a call is made only for
 //! what the index lacks.
@@ -31,19 +31,14 @@ const RESPONSE_BYTES_MAX: u64 = 64 * 1024 * 1024;
 /// nearest-neighbour search to a quarter.
 pub(crate) const EMBEDDING_DIMENSIONS: usize = 1024;
 
-/// Version of [`SameBehaviour`]'s prompt; a change to the wording changes it, so cached answers
-/// to the old one are not reused.
-pub(crate) const SAME_BEHAVIOUR_PROMPT_VERSION: &str = "same-behaviour-1";
+/// Version of the decision question and its criteria, which are the model's whole prompt. Shorter
+/// wording measured clearly worse (it separated copies from look-alikes far less), so a change
+/// must be measured again, and it changes this, so cached answers to the old one are not reused.
+pub(crate) const PROMPT_VERSION: &str = "same-behaviour-2";
 
 /// Characters of each function put in a question: enough for the body of nearly every function,
 /// bounded so that one huge function cannot dominate the cost of a call.
 const QUESTION_CHARS_MAX: usize = 4000;
-
-/// Tokens a decision may generate: the answer is one word.
-const ANSWER_TOKENS_MAX: u32 = 4;
-
-/// How many candidate tokens the provider returns probabilities for at the answer position.
-const LOGPROBS_TOP: u32 = 5;
 
 #[derive(Debug, thiserror::Error)]
 pub enum InferenceError {
@@ -53,8 +48,6 @@ pub enum InferenceError {
     Status { status: u16, body: String },
     #[error("unexpected response from the model API: {0}")]
     Response(String),
-    #[error("the model gave no yes or no: {0:?}")]
-    Undecided(String),
 }
 
 /// An OpenAI-compatible API, and what its calls have cost so far.
@@ -94,15 +87,26 @@ impl Client {
             .then(|| self.cost_micro_usd.load(Ordering::Relaxed))
     }
 
-    /// Posts `body` and returns the JSON answer, retrying rate limits, server errors and
-    /// transport failures with doubling waits.
+    /// Posts `body` to `path` under the base URL.
     fn post(&self, path: &str, body: &Value) -> Result<Value, InferenceError> {
-        let url = format!("{}{path}", self.base_url);
+        self.post_to(&format!("{}{path}", self.base_url), body)
+    }
+
+    /// Posts `body` to `path` under the API's root, which is the base URL without its version:
+    /// the Decisions API is served beside `/v1`, not under it.
+    fn post_root(&self, path: &str, body: &Value) -> Result<Value, InferenceError> {
+        let root = self.base_url.strip_suffix("/v1").unwrap_or(&self.base_url);
+        self.post_to(&format!("{root}{path}"), body)
+    }
+
+    /// Posts `body` to `url` and returns the JSON answer, retrying rate limits, server errors
+    /// and transport failures with doubling waits.
+    fn post_to(&self, url: &str, body: &Value) -> Result<Value, InferenceError> {
         let payload = body.to_string();
         let mut wait = Duration::from_millis(BACKOFF_MS);
         let mut attempt = 1;
         loop {
-            let outcome = self.send(&url, &payload);
+            let outcome = self.send(url, &payload);
             let retryable = match &outcome {
                 Err(InferenceError::Transport(_)) => true,
                 Err(InferenceError::Status { status, .. }) => *status == 429 || *status >= 500,
@@ -203,187 +207,144 @@ pub(crate) fn unit(mut vector: Vec<f32>) -> Vec<f32> {
     vector
 }
 
-/// "Do these two functions do the same thing?"
-pub(crate) struct SameBehaviour<'a> {
-    pub first: &'a str,
-    pub second: &'a str,
+/// The decision models whose bar was measured, by id prefix (the router's alias marker aside), and
+/// the probability of "same thing" at which each one's answer is accepted. Probabilities do not
+/// transfer between models, so a model is used only once it has a row. Measured on 289
+/// hand-labelled candidate pairs (52 copies), the bar with the best F1:
+/// - Jev: 0.65 (precision 0.54, recall 0.71, F1 0.61; 0.63 and 0.70 give 0.60 and 0.59). It
+///   ranks copies above look-alikes well (ROC-AUC 0.88) but is under-confident on true copies.
+/// - `OpenAI`'s gpt-6-luna decisions: 0.70 (precision 0.51, recall 0.67, F1 0.58; 0.80 gives 0.57).
+///   Its AUC is 0.89 and it is more confident, so the F1 curve is flat from 0.5 to 0.8.
+const PROBABILITY_MIN: [(&str, f64); 2] = [
+    ("typesafe/jev-", 0.65),
+    ("openai/gpt-6-luna-decisions", 0.70),
+];
+
+/// The acceptance bar measured for `model`, `None` for a model nobody has measured.
+pub(crate) fn probability_min(model: &str) -> Option<f64> {
+    let id = model.trim_start_matches('~');
+    PROBABILITY_MIN
+        .iter()
+        .find(|(prefix, _)| id.starts_with(prefix))
+        .map(|&(_, bar)| bar)
 }
 
-/// Answers typed yes/no questions with a probability and no prose.
-pub(crate) trait DecisionModel: Sync {
-    /// The model's name, which keys its cached answers.
-    fn name(&self) -> &str;
+/// What the question asks, and when it is true or false. `{other}` is the candidate's name.
+const INSTRUCTIONS: &str = "Do function_a and {other} serve the same purpose, such that \
+    they could be replaced by a single shared function (perhaps parameterised or generic)?";
+const TRUE_MEANS: &str = "Both compute the same result and have the same effects for the same \
+    inputs, even if written in different languages or styles, or against different backends of \
+    one interface; one could replace the other or both could be one function.";
+const FALSE_MEANS: &str = "They do different things: different inputs or outputs, different \
+    effects, different steps of a process, inverse operations, or merely similar-looking \
+    boilerplate, wrappers or tests that check different behaviour.";
 
-    /// The probability that the two functions do the same thing.
-    fn decide(&self, question: &SameBehaviour<'_>) -> Result<f64, InferenceError>;
-}
-
-/// A [`DecisionModel`] over chat completions: the question goes in with a one-word answer
-/// required, and the probability is read from the answer token's log-probabilities. A provider
-/// that returns none leaves the answer itself, which is 1 or 0.
-pub(crate) struct ChatDecisionModel<'a> {
+/// A decision model behind `OpenRouter`'s Decisions API: one yes/no ("noul") question per
+/// candidate, all about the same function, so they share one request and its state. The answer
+/// is the probability of yes, and output tokens are free.
+pub(crate) struct DecisionModel<'a> {
     pub client: &'a Client,
     pub model: &'a str,
 }
 
-fn prompt(question: &SameBehaviour<'_>) -> String {
-    let cut = |text: &str| text.chars().take(QUESTION_CHARS_MAX).collect::<String>();
-    format!(
-        "Do these two functions do the same thing? Ignore names, language and style; compare what \
-         they compute and which effects they have.\n\nFunction 1:\n{}\n\nFunction 2:\n{}\n\n\
-         Same thing?",
-        cut(question.first),
-        cut(question.second)
-    )
+/// The part of a function that goes in a question.
+fn cut(text: &str) -> String {
+    text.chars().take(QUESTION_CHARS_MAX).collect()
 }
 
-impl DecisionModel for ChatDecisionModel<'_> {
-    fn name(&self) -> &str {
-        self.model
-    }
-
-    fn decide(&self, question: &SameBehaviour<'_>) -> Result<f64, InferenceError> {
-        let response = self.client.post(
-            "/chat/completions",
-            &json!({
-                "model": self.model,
-                "messages": [
-                    { "role": "system", "content": "Answer with exactly one word: Yes or No." },
-                    { "role": "user", "content": prompt(question) },
-                ],
-                "max_tokens": ANSWER_TOKENS_MAX,
-                "temperature": 0,
-                "logprobs": true,
-                "top_logprobs": LOGPROBS_TOP,
+fn request(model: &str, first: &str, others: &[&str]) -> Value {
+    let mut state = serde_json::Map::new();
+    let mut questions = serde_json::Map::new();
+    state.insert("function_a".to_owned(), Value::from(cut(first)));
+    for (position, other) in others.iter().enumerate() {
+        let name = format!("function_b{}", position + 1);
+        questions.insert(
+            format!("same_b{}", position + 1),
+            json!({
+                "type": "noul",
+                "instructions": INSTRUCTIONS.replace("{other}", &name),
+                "criteria": { "true": TRUE_MEANS, "false": FALSE_MEANS },
             }),
-        )?;
-        let choice = response
-            .pointer("/choices/0")
-            .ok_or_else(|| InferenceError::Response("no choices".to_owned()))?;
-        let text = choice
-            .pointer("/message/content")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        // The answer is the first token with a word in it; a leading newline or space is not.
-        if let Some(tokens) = choice
-            .pointer("/logprobs/content")
-            .and_then(Value::as_array)
-            && let Some(candidates) = answer_candidates(tokens)
-            && let Some(probability) = yes_probability(candidates)
-        {
-            return Ok(probability);
-        }
-        match word(text).as_str() {
-            "yes" => Ok(1.0),
-            "no" => Ok(0.0),
-            _ => Err(InferenceError::Undecided(text.chars().take(40).collect())),
-        }
+        );
+        state.insert(name, Value::from(cut(other)));
     }
+    json!({ "model": model, "state": state, "questions": questions })
 }
 
-/// The alternatives the provider weighed at the answer token: the first token with a word in it,
-/// because a leading newline or space is not the decision.
-fn answer_candidates(tokens: &[Value]) -> Option<&[Value]> {
-    let token_word = |token: &Value| {
-        word(
-            token
-                .get("token")
-                .and_then(Value::as_str)
-                .unwrap_or_default(),
-        )
-    };
-    let token = tokens.iter().find(|token| !token_word(token).is_empty())?;
-    // Only a yes or no is a decision; anything else is not read as one.
-    matches!(token_word(token).as_str(), "yes" | "no").then_some(())?;
-    token
-        .get("top_logprobs")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
+fn probabilities(response: &Value, count: usize) -> Result<Vec<f64>, InferenceError> {
+    (1..=count)
+        .map(|position| {
+            response
+                .pointer(&format!("/answers/same_b{position}/noul"))
+                .and_then(Value::as_f64)
+                .map(|probability| probability.clamp(0.0, 1.0))
+                .ok_or_else(|| InferenceError::Response(format!("no answer {position}")))
+        })
+        .collect()
 }
 
-/// An answer's first word, lowercase and without punctuation.
-fn word(text: &str) -> String {
-    text.trim()
-        .trim_matches(|c: char| !c.is_alphanumeric())
-        .split(|c: char| !c.is_alphanumeric())
-        .next()
-        .unwrap_or_default()
-        .to_lowercase()
-}
-
-/// Yes over yes plus no among the candidate tokens, `None` when it offers neither.
-fn yes_probability(candidates: &[Value]) -> Option<f64> {
-    let (mut yes, mut no) = (0.0, 0.0);
-    for candidate in candidates {
-        let token = candidate
-            .get("token")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let logprob = candidate.get("logprob").and_then(Value::as_f64)?;
-        match word(token).as_str() {
-            "yes" => yes += logprob.exp(),
-            "no" => no += logprob.exp(),
-            _ => {}
+impl DecisionModel<'_> {
+    /// For each of `others`, the probability that it and `first` do the same thing, in order,
+    /// from one call.
+    pub fn decide(&self, first: &str, others: &[&str]) -> Result<Vec<f64>, InferenceError> {
+        if others.is_empty() {
+            return Ok(Vec::new());
         }
+        let response = self
+            .client
+            .post_root("/alpha/decisions", &request(self.model, first, others))?;
+        probabilities(&response, others.len())
     }
-    (yes + no > 0.0).then(|| yes / (yes + no))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn candidates(tokens: &[(&str, f64)]) -> Vec<Value> {
-        tokens
-            .iter()
-            .map(|(token, p)| json!({ "token": token, "logprob": f64::ln(*p) }))
-            .collect()
+    #[test]
+    fn a_question_per_candidate_about_the_same_function() {
+        let long = "x".repeat(QUESTION_CHARS_MAX + 100);
+        let body = request("typesafe/jev-1.14", &long, &["one", "two", "three"]);
+        let state = body["state"].as_object().unwrap();
+        let questions = body["questions"].as_object().unwrap();
+        assert_eq!(state.len(), 4);
+        assert_eq!(questions.len(), 3);
+        assert_eq!(
+            state["function_a"].as_str().unwrap().len(),
+            QUESTION_CHARS_MAX
+        );
+        // Each question names its own candidate and no other.
+        for position in 1..=3 {
+            let question = &questions[&format!("same_b{position}")];
+            assert_eq!(question["type"], "noul");
+            assert!(state.contains_key(&format!("function_b{position}")));
+            let instructions = question["instructions"].as_str().unwrap();
+            assert!(instructions.contains(&format!("function_b{position} ")));
+            assert!(!instructions.contains(&format!("function_b{} ", position % 3 + 1)));
+        }
     }
 
     #[test]
-    fn probability_pools_spellings_of_each_answer() {
-        let found = yes_probability(&candidates(&[
-            ("Yes", 0.6),
-            (" yes", 0.1),
-            ("No", 0.2),
-            ("Same", 0.1),
-        ]));
-        assert!((found.unwrap() - 0.7 / 0.9).abs() < 1e-9);
+    fn answers_are_read_in_the_order_asked() {
+        let response = json!({ "answers": {
+            "same_b1": { "type": "noul", "noul": 0.9 },
+            "same_b2": { "type": "noul", "noul": 0.1 },
+        }});
+        assert_eq!(probabilities(&response, 2).unwrap(), vec![0.9, 0.1]);
+        assert!(matches!(
+            probabilities(&response, 3),
+            Err(InferenceError::Response(_))
+        ));
     }
 
     #[test]
-    fn no_yes_or_no_among_the_candidates_is_no_probability() {
-        assert_eq!(yes_probability(&candidates(&[("Same", 0.9)])), None);
-    }
-
-    #[test]
-    fn answers_are_read_without_punctuation_or_case() {
-        assert_eq!(word("No."), "no");
-        assert_eq!(word("  YES\n"), "yes");
-    }
-
-    #[test]
-    fn the_answer_token_is_the_first_one_with_a_word_in_it() {
-        let tokens: Vec<Value> = [("\n", 1.0), ("No", 0.9)]
-            .iter()
-            .map(|(token, p)| {
-                json!({
-                    "token": token,
-                    "top_logprobs": [{ "token": token, "logprob": f64::ln(*p) }, { "token": "Yes", "logprob": f64::ln(0.1) }],
-                })
-            })
-            .collect();
-        let answer = answer_candidates(&tokens).unwrap();
-        assert!((yes_probability(answer).unwrap() - 0.1 / 1.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn an_answer_that_is_neither_yes_nor_no_is_not_a_decision() {
-        let tokens = vec![json!({
-            "token": "Different",
-            "top_logprobs": [{ "token": "Different", "logprob": f64::ln(0.99) }, { "token": "Yes", "logprob": f64::ln(0.01) }],
-        })];
-        assert_eq!(answer_candidates(&tokens), None);
+    fn only_measured_models_have_a_bar_and_an_alias_shares_its_models() {
+        assert!(probability_min("typesafe/jev-1.14").is_some());
+        assert_eq!(
+            probability_min("~typesafe/jev-latest"),
+            probability_min("typesafe/jev-1.14")
+        );
+        assert!(probability_min("qwen/qwen3-next-80b-a3b-instruct").is_none());
     }
 
     #[test]

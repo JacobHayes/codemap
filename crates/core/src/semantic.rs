@@ -22,8 +22,7 @@ use rayon::prelude::*;
 
 use crate::config::{Config, Inference};
 use crate::inference::{
-    ChatDecisionModel, Client, DecisionModel, InferenceError, SAME_BEHAVIOUR_PROMPT_VERSION,
-    SameBehaviour, unit,
+    Client, DecisionModel, InferenceError, PROMPT_VERSION, probability_min, unit,
 };
 use crate::reader::{Index, QueryError};
 use crate::similarity::{Components, eligible_filter};
@@ -33,20 +32,21 @@ pub(crate) const SEMANTIC: &str = "semantic";
 /// Cosine similarity at which a pair is worth asking a model about. Code in one codebase shares
 /// vocabulary, so the vectors are crowded, and floors do not transfer between embedding models;
 /// this one was measured on two repositories (6,500 and 8,400 functions) with voyage-code-4 and
-/// with qwen3-embedding-8b, sampling pairs across similarity bands. With both, almost nothing
-/// above the decision model's bar is found below 0.75. With voyage, from 0.7 to 0.8 a fifth of
-/// the confirmed pairs read by hand were copies (the rest a function beside its test, or a thin
-/// wrapper), from 0.8 to 0.9 half, above 0.9 three in four; qwen's similarities run higher and
-/// its confirmed pairs cluster above 0.85. 0.8 halves the questions for either.
-pub(crate) const SIMILARITY_MIN: f32 = 0.8;
+/// with qwen3-embedding-8b, sampling pairs across similarity bands. With voyage, from 0.7 to 0.8
+/// a fifth of the confirmed pairs read by hand were copies (the rest a function beside its test,
+/// or a thin wrapper), from 0.8 to 0.9 half, above 0.9 three in four; qwen's similarities run
+/// higher and its confirmed pairs cluster above 0.85. Almost nothing is found below 0.7. That
+/// fifth of real copies is worth the extra questions, because a decision costs a few cents per
+/// thousand candidates.
+pub(crate) const SIMILARITY_MIN: f32 = 0.7;
 
 /// Candidates kept per function. A function has a handful of real counterparts at most, and the
 /// strongest come first; more only spends calls on look-alikes.
 pub(crate) const NEIGHBOURS_MAX: usize = 3;
 
-/// Probability of "same thing" at which a candidate becomes a semantic pair. Models are
-/// overconfident either way, so this is deliberately high: a wrong pair merges two clusters.
-pub(crate) const PROBABILITY_MIN: f64 = 0.8;
+/// Candidates asked about one function in one call. A function is the neighbour of a few
+/// others, so this only bounds the odd hub; a bigger request is slower for no saving.
+const ASK_SIZE_MAX: usize = 6;
 
 /// Functions in a group beyond which a semantic pair no longer joins two clusters. Pairs chain:
 /// every link can be a fair "same thing" while the ends are different things, and on real
@@ -79,6 +79,8 @@ pub enum SemanticOff {
     NotConfigured,
     /// The environment variable that should hold the API key is unset or empty.
     MissingKey { env: String },
+    /// The decision model has no measured acceptance bar.
+    UnmeasuredModel { model: String },
 }
 
 /// What a run did.
@@ -126,6 +128,9 @@ impl SemanticStatus {
                 format!("{head} off, no [inference] in .codemap/config.toml")
             }
             Self::Off(SemanticOff::MissingKey { env }) => format!("{head} off, ${env} is not set"),
+            Self::Off(SemanticOff::UnmeasuredModel { model }) => {
+                format!("{head} off, no measured acceptance bar for decision model {model}")
+            }
             Self::Unchanged => format!("{head} unchanged"),
             Self::Pending => format!("{head} waiting to run"),
             Self::Superseded => format!("{head} interrupted by a newer change"),
@@ -157,6 +162,8 @@ impl SemanticStatus {
 pub(crate) struct Setup<'a> {
     inference: &'a Inference,
     key: String,
+    /// Probability of "same thing" at which a candidate becomes a semantic pair.
+    probability_min: f64,
 }
 
 /// The configured analysis, or why there is none.
@@ -165,10 +172,15 @@ pub(crate) fn setup(config: &Config) -> Result<Setup<'_>, SemanticOff> {
         .inference
         .as_ref()
         .ok_or(SemanticOff::NotConfigured)?;
+    let bar =
+        probability_min(&inference.decision_model).ok_or_else(|| SemanticOff::UnmeasuredModel {
+            model: inference.decision_model.clone(),
+        })?;
     match std::env::var(&inference.api_key_env) {
         Ok(key) if !key.trim().is_empty() => Ok(Setup {
             inference,
             key: key.trim().to_owned(),
+            probability_min: bar,
         }),
         _ => Err(SemanticOff::MissingKey {
             env: inference.api_key_env.clone(),
@@ -237,7 +249,7 @@ pub(crate) fn run(
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Outcome, QueryError> {
     let client = Client::new(&setup.inference.base_url, setup.key.clone());
-    let decider = ChatDecisionModel {
+    let decider = DecisionModel {
         client: &client,
         model: &setup.inference.decision_model,
     };
@@ -268,7 +280,7 @@ fn analyse(
     index: &Index,
     setup: &Setup<'_>,
     client: &Client,
-    decider: &dyn DecisionModel,
+    decider: &DecisionModel<'_>,
     cancelled: &dyn Fn() -> bool,
     report: &mut SemanticRun,
 ) -> Result<Vec<(String, String, f64)>, Stop> {
@@ -312,12 +324,12 @@ fn analyse(
     // for functions that are here, so that a pair pushed out of its members' nearest neighbours
     // by newer code stays a finding.
     let mut ordered: Vec<(usize, usize)> = candidates.clone();
-    ordered.extend(known_pairs(&functions, &answers));
+    ordered.extend(known_pairs(&functions, &answers, setup.probability_min));
     let mut pairs = Vec::new();
     for (a, b) in ordered {
         let key = answer_key(&functions[a].hash, &functions[b].hash);
         if let Some(&probability) = answers.get(&key)
-            && probability >= PROBABILITY_MIN
+            && probability >= setup.probability_min
             && join_within(&mut components, a, b, GROUP_SIZE_MAX)
         {
             pairs.push((
@@ -685,6 +697,7 @@ fn candidates(
 fn known_pairs(
     functions: &[Function],
     answers: &BTreeMap<(String, String), f64>,
+    probability_min: f64,
 ) -> Vec<(usize, usize)> {
     let mut first_of: BTreeMap<&str, usize> = BTreeMap::new();
     for (position, function) in functions.iter().enumerate() {
@@ -692,7 +705,7 @@ fn known_pairs(
     }
     let mut known: Vec<(f64, usize, usize)> = answers
         .iter()
-        .filter(|&(_, &probability)| probability >= PROBABILITY_MIN)
+        .filter(|&(_, &probability)| probability >= probability_min)
         .filter_map(|((hash_a, hash_b), &probability)| {
             let (a, b) = (
                 *first_of.get(hash_a.as_str())?,
@@ -719,19 +732,14 @@ fn answer_key(a: &str, b: &str) -> (String, String) {
     }
 }
 
-/// Probability for every candidate that has an answer: cached, or asked now.
-fn confirm(
-    index: &Index,
-    decider: &dyn DecisionModel,
-    functions: &[Function],
-    candidates: &[(usize, usize)],
-    sources: &mut Sources<'_>,
-    cancelled: &dyn Fn() -> bool,
-    report: &mut SemanticRun,
+/// The cached answer for every pair asked of `model` with this `prompt` version, and of no other
+/// model or wording.
+fn cached_answers(
+    connection: &duckdb::Connection,
+    model: &str,
+    prompt: &str,
 ) -> Result<BTreeMap<(String, String), f64>, Stop> {
-    let connection = index.store().connection();
-    let (model, prompt) = (decider.name(), SAME_BEHAVIOUR_PROMPT_VERSION);
-    let mut answers: BTreeMap<(String, String), f64> = BTreeMap::new();
+    let mut answers = BTreeMap::new();
     let mut statement = connection.prepare(
         "SELECT hash_a, hash_b, probability FROM answers WHERE model = ? AND prompt = ?",
     )?;
@@ -741,6 +749,92 @@ fn confirm(
         let (key, probability) = row?;
         answers.insert(key, probability);
     }
+    Ok(answers)
+}
+
+/// Splits `pending` pairs into asks: each is about one function, the pair's end that appears in
+/// the most pairs, so that a function's candidates share a call.
+fn asks(pending: &[(usize, usize)]) -> Vec<(usize, Vec<usize>)> {
+    let mut appearances: BTreeMap<usize, usize> = BTreeMap::new();
+    for &(a, b) in pending {
+        *appearances.entry(a).or_default() += 1;
+        *appearances.entry(b).or_default() += 1;
+    }
+    let mut by_first: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for &(a, b) in pending {
+        let (first, other) = if appearances[&b] > appearances[&a] {
+            (b, a)
+        } else {
+            (a, b)
+        };
+        by_first.entry(first).or_default().push(other);
+    }
+    by_first
+        .into_iter()
+        .flat_map(|(first, others)| {
+            others
+                .chunks(ASK_SIZE_MAX)
+                .map(|chunk| (first, chunk.to_vec()))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// A call to make: the function and the candidates it is compared with, each with the cache key
+/// its answer is stored under.
+struct Ask {
+    first: String,
+    others: Vec<(String, String, String)>,
+}
+
+/// The calls that ask `pending` pairs, with the text of each function; a function whose source
+/// changed since it was indexed is left for the next refresh.
+fn build_calls(
+    functions: &[Function],
+    pending: &[(usize, usize)],
+    sources: &mut Sources<'_>,
+    report: &mut SemanticRun,
+) -> Vec<Ask> {
+    let mut calls: Vec<Ask> = Vec::new();
+    for (first, others) in asks(pending) {
+        let Some(first_text) = sources.text(&functions[first]) else {
+            // Changed since indexed: the next refresh will see the new text.
+            report.failed_count += others.len() as u64;
+            continue;
+        };
+        let mut call = Ask {
+            first: first_text,
+            others: Vec::new(),
+        };
+        for other in others {
+            match sources.text(&functions[other]) {
+                Some(text) => {
+                    let key = answer_key(&functions[first].hash, &functions[other].hash);
+                    call.others.push((key.0, key.1, text));
+                }
+                None => report.failed_count += 1,
+            }
+        }
+        if !call.others.is_empty() {
+            calls.push(call);
+        }
+    }
+    calls
+}
+
+/// Probability for every candidate that has an answer: cached, or asked now.
+fn confirm(
+    index: &Index,
+    decider: &DecisionModel<'_>,
+    functions: &[Function],
+    candidates: &[(usize, usize)],
+    sources: &mut Sources<'_>,
+    cancelled: &dyn Fn() -> bool,
+    report: &mut SemanticRun,
+) -> Result<BTreeMap<(String, String), f64>, Stop> {
+    let connection = index.store().connection();
+    let (model, prompt) = (decider.model, PROMPT_VERSION);
+    let mut answers = cached_answers(connection, model, prompt)?;
     let pending: Vec<(usize, usize)> = candidates
         .iter()
         .copied()
@@ -748,50 +842,45 @@ fn confirm(
             !answers.contains_key(&answer_key(&functions[a].hash, &functions[b].hash))
         })
         .collect();
-    let mut questions: Vec<(String, String, String, String)> = Vec::new();
-    for &(a, b) in &pending {
-        let key = answer_key(&functions[a].hash, &functions[b].hash);
-        match (sources.text(&functions[a]), sources.text(&functions[b])) {
-            (Some(first), Some(second)) => questions.push((key.0, key.1, first, second)),
-            // Changed since indexed: the next refresh will see the new text.
-            _ => report.failed_count += 1,
-        }
-    }
+    let calls = build_calls(functions, &pending, sources, report);
     let mut failure = None;
     fan_out(
-        &questions,
+        &calls,
         DECIDE_THREADS,
-        |(_, _, first, second)| decider.decide(&SameBehaviour { first, second }),
+        |call| {
+            let texts: Vec<&str> = call
+                .others
+                .iter()
+                .map(|(_, _, text)| text.as_str())
+                .collect();
+            decider.decide(&call.first, &texts)
+        },
         |position, result| {
             if cancelled() {
                 failure = Some(Stop::Superseded);
                 return ControlFlow::Break(());
             }
-            let (hash_a, hash_b, ..) = &questions[position];
-            match result {
-                Ok(probability) => {
-                    let stored = connection.execute(
-                        "INSERT INTO answers VALUES (?, ?, ?, ?, ?)",
-                        params![hash_a, hash_b, model, prompt, probability],
-                    );
-                    if let Err(error) = stored {
-                        failure = Some(Stop::from(error));
-                        return ControlFlow::Break(());
-                    }
-                    report.asked_count += 1;
-                    answers.insert((hash_a.clone(), hash_b.clone()), probability);
-                    ControlFlow::Continue(())
-                }
-                Err(InferenceError::Undecided(_)) => {
-                    report.asked_count += 1;
-                    report.failed_count += 1;
-                    ControlFlow::Continue(())
-                }
+            let call = &calls[position];
+            let decisions = match result {
+                Ok(decisions) => decisions,
                 Err(error) => {
                     failure = Some(error.into());
-                    ControlFlow::Break(())
+                    return ControlFlow::Break(());
                 }
+            };
+            for ((hash_a, hash_b, _), probability) in call.others.iter().zip(decisions) {
+                report.asked_count += 1;
+                let stored = connection.execute(
+                    "INSERT INTO answers VALUES (?, ?, ?, ?, ?)",
+                    params![hash_a, hash_b, model, prompt, probability],
+                );
+                if let Err(error) = stored {
+                    failure = Some(Stop::from(error));
+                    return ControlFlow::Break(());
+                }
+                answers.insert((hash_a.clone(), hash_b.clone()), probability);
             }
+            ControlFlow::Continue(())
         },
     );
     match failure {
@@ -942,6 +1031,34 @@ mod tests {
     }
 
     #[test]
+    fn a_function_in_most_pairs_is_asked_about_once_with_all_its_candidates() {
+        // 0 is a hub; 1-2 and 3 are separate pairs.
+        let calls = asks(&[(0, 1), (0, 2), (0, 3), (4, 5)]);
+        assert_eq!(calls, vec![(0, vec![1, 2, 3]), (4, vec![5])]);
+        // A hub on the higher side is still the one asked about.
+        assert_eq!(asks(&[(0, 9), (1, 9), (2, 9)]), vec![(9, vec![0, 1, 2])]);
+        let many: Vec<(usize, usize)> = (1..=ASK_SIZE_MAX + 1).map(|other| (0, other)).collect();
+        let sizes: Vec<usize> = asks(&many).iter().map(|(_, others)| others.len()).collect();
+        assert_eq!(sizes, vec![ASK_SIZE_MAX, 1]);
+    }
+
+    #[test]
+    fn cached_answers_belong_to_one_model_and_one_wording() {
+        let connection = duckdb::Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE answers (hash_a VARCHAR, hash_b VARCHAR, model VARCHAR, prompt VARCHAR, probability DOUBLE);
+                 INSERT INTO answers VALUES ('a', 'b', 'm1', 'p1', 0.9), ('a', 'c', 'm2', 'p1', 0.9), ('a', 'd', 'm1', 'p2', 0.9);",
+            )
+            .unwrap();
+        let held = cached_answers(&connection, "m1", "p1").ok().unwrap();
+        assert_eq!(
+            held.keys().collect::<Vec<_>>(),
+            vec![&("a".to_owned(), "b".to_owned())]
+        );
+    }
+
+    #[test]
     fn answers_are_keyed_by_the_ordered_pair() {
         assert_eq!(answer_key("b", "a"), answer_key("a", "b"));
     }
@@ -953,11 +1070,30 @@ mod tests {
     }
 
     #[test]
+    fn a_decision_model_without_a_measured_bar_is_not_used() {
+        let config = Config {
+            inference: Some(Inference {
+                embedding_model: "e".to_owned(),
+                decision_model: "some/unmeasured-model".to_owned(),
+                base_url: "http://localhost".to_owned(),
+                api_key_env: "PATH".to_owned(),
+            }),
+            ..Config::default()
+        };
+        assert_eq!(
+            setup(&config).err(),
+            Some(SemanticOff::UnmeasuredModel {
+                model: "some/unmeasured-model".to_owned()
+            })
+        );
+    }
+
+    #[test]
     fn without_the_key_in_the_environment_the_analysis_is_off() {
         let config = Config {
             inference: Some(Inference {
                 embedding_model: "e".to_owned(),
-                decision_model: "d".to_owned(),
+                decision_model: "typesafe/jev-1.14".to_owned(),
                 base_url: "http://localhost".to_owned(),
                 api_key_env: "CODEMAP_TEST_KEY_THAT_IS_NEVER_SET".to_owned(),
             }),
@@ -1052,7 +1188,7 @@ mod tests {
                 write(
                     dir.path(),
                     ".codemap/config.toml",
-                    "[inference]\nembedding_model = \"embed-test\"\ndecision_model = \"decide-test\"\n\
+                    "[inference]\nembedding_model = \"embed-test\"\ndecision_model = \"typesafe/jev-test\"\n\
                      base_url = \"http://127.0.0.1:9\"\napi_key_env = \"PATH\"\n",
                 );
                 let connection =
@@ -1081,8 +1217,8 @@ mod tests {
                     let key = answer_key(&hash(first), &hash(second));
                     connection
                         .execute(
-                            "INSERT INTO answers VALUES (?, ?, 'decide-test', ?, ?)",
-                            params![key.0, key.1, SAME_BEHAVIOUR_PROMPT_VERSION, probability],
+                            "INSERT INTO answers VALUES (?, ?, 'typesafe/jev-test', ?, ?)",
+                            params![key.0, key.1, PROMPT_VERSION, probability],
                         )
                         .unwrap();
                 }

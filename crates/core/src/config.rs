@@ -92,9 +92,11 @@ pub struct Acknowledgement {
 pub struct Inference {
     /// The embedding model, as the provider names it.
     pub embedding_model: String,
-    /// The model that confirms candidate pairs.
+    /// The decision model that confirms candidate pairs: `typesafe/jev-1.14` (recommended) or
+    /// `openai/gpt-6-luna-decisions`, asked through the Decisions API.
     pub decision_model: String,
-    /// An OpenAI-compatible API, with no trailing slash.
+    /// An OpenRouter-style API, with no trailing slash and ending in `/v1`. The Decisions API is served beside its
+    /// `/v1`.
     #[serde(default = "default_base_url")]
     pub base_url: String,
     /// The environment variable holding the API key; the key itself never goes in the project.

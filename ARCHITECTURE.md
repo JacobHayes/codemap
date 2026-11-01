@@ -174,7 +174,7 @@ flowchart LR
 | **Extractor** | Turns an input into facts keyed to files, lines or symbols. | Syntax (driven by Languages), plain text for every other file. Later: coverage, profiles, test durations |
 | **Analysis** | Reads the index; writes edges, similar pairs, labels or measures; declares what it reads and writes. | Link (edges, fan-in and fan-out), similarity |
 | **Detector** | Reads the index; emits findings with measures and evidence. Detector-specific detail is data on the finding, never a new type. | The eight above-the-fold detectors in `INTENT.md` |
-| **Decision model** / **LLM** | Typed questions in, probabilities out / text in, text out. | Two vendors each |
+| **Decision model** / **LLM** | Typed questions in, probabilities out / text in, text out. | Jev and OpenAI decisions / two vendors |
 
 - **Built-ins use the seams.** A shipped detector has no access a new one would lack; that is
   how the seams stay honest.
@@ -252,8 +252,15 @@ Deterministic analyses always run. Analyses that need a model run when one is co
   intent, which concern, whether a test meets the project's criteria.
 - **LLMs** do what needs words: naming a cluster, saying why an area stands out.
 
-Decision models and LLMs are traits, each with two vendors' APIs. Embeddings use one
-OpenAI-compatible client, which most embedding providers speak. Tests seed the `embeddings` and
+Decision models are structured decision APIs, never chat completions: typed answers with
+probabilities, no prose. They are asked through OpenRouter's Decisions API, which serves several
+makers' models behind one request shape; Jev (`typesafe/jev-1.14`) is the recommended one, and
+OpenAI's `openai/gpt-6-luna-decisions` the second. A request carries one function and a yes/no
+question for each of its candidates. Probabilities do not transfer between models, so each model
+has a measured acceptance bar and a model without one is not used. The question and criteria are
+versioned, and a cached answer is reused only for the same model and version. LLMs are a trait with
+two vendors' APIs. Embeddings use one OpenAI-compatible client, which most embedding providers
+speak. Tests seed the `embeddings` and
 `answers` tables instead of mocking a client.
 
 Semantic duplication runs after the deterministic analyses have committed, outside their
