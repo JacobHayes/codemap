@@ -11,7 +11,7 @@ use ignore::WalkBuilder;
 use rayon::prelude::*;
 
 use crate::config::{Config, ConfigError, RoleOverrides};
-use crate::detect::{detect, rank};
+use crate::detect::{detect, rank, test_shares};
 use crate::facts::{FileFacts, TOKEN_ENCODING, extract};
 use crate::reader::{Index, QueryError};
 use crate::semantic::{self, SemanticStatus};
@@ -189,7 +189,8 @@ impl Index {
         // Semantic pairs went with the old ones: they are due again.
         self.store().set_meta("semantic", "")?;
         let mut findings = detect(self, config)?;
-        let areas = rank(&mut findings, config);
+        let shares = test_shares(self, &findings)?;
+        let areas = rank(&mut findings, &shares, config);
         self.save_analysis(&findings, &areas)?;
         self.store().set_meta("analysis", &key)?;
         Ok(())
@@ -297,7 +298,8 @@ impl Index {
         drop(rows);
         similarity::write_duplicated(self)?;
         let mut findings = detect(self, config)?;
-        let areas = rank(&mut findings, config);
+        let shares = test_shares(self, &findings)?;
+        let areas = rank(&mut findings, &shares, config);
         self.save_analysis(&findings, &areas)?;
         Ok(())
     }

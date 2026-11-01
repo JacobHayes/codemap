@@ -223,6 +223,10 @@ more (the longest copy was edited, say), it falls back to the group of the same 
 shares at least half of its members with them, so acknowledgements survive an edited copy, a
 new site or a near copy dropping out.
 
+Test code weighs less: an area's opportunity is discounted in proportion to its share of test
+lines, a named constant, so test areas rank behind production areas of comparable mass while an
+extreme outlier can still lead. Test areas are never hidden; the role filter isolates them.
+
 A group ranks by its sites' lines counted once. A place that reports disproportion (composition,
 size) ranks by its excess over the peer median, not its total, so a large directory does not
 outrank every pattern for its size alone.

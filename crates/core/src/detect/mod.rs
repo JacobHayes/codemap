@@ -22,7 +22,7 @@ use crate::reader::{Index, QueryError};
 
 pub use corpus::Corpus;
 pub(crate) use corpus::is_ranked;
-pub use rank::{Area, rank};
+pub use rank::{Area, rank, test_shares};
 
 /// What a finding is about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
