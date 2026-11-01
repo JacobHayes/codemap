@@ -56,6 +56,7 @@ impl Index {
                 area.confidence,
                 area.detectors.join(","),
                 area.finding_count,
+                serde_json::to_string(&area.agreeing)?,
                 area.reason,
                 area.acknowledged
             ])?;
@@ -97,25 +98,35 @@ impl Index {
     pub(crate) fn areas(&self) -> Result<Vec<Area>, QueryError> {
         let mut statement = self.store().connection().prepare(
             "SELECT subject, title, subject_kind, rank, opportunity, mass_lines, confidence, detectors,
-                    finding_count, reason, acknowledged FROM areas ORDER BY rank",
+                    finding_count, agreeing, reason, acknowledged FROM areas ORDER BY rank",
         )?;
         let rows = statement.query_map([], |row| {
             let detectors: String = row.get(7)?;
-            Ok(Area {
-                subject: row.get(0)?,
-                title: row.get(1)?,
-                subject_kind: kind_of(&row.get::<_, String>(2)?),
-                rank: row.get(3)?,
-                opportunity: row.get(4)?,
-                mass_lines: row.get(5)?,
-                confidence: row.get(6)?,
-                detectors: detectors.split(',').map(str::to_owned).collect(),
-                finding_count: row.get(8)?,
-                reason: row.get(9)?,
-                acknowledged: row.get(10)?,
-            })
+            Ok((
+                Area {
+                    subject: row.get(0)?,
+                    title: row.get(1)?,
+                    subject_kind: kind_of(&row.get::<_, String>(2)?),
+                    rank: row.get(3)?,
+                    opportunity: row.get(4)?,
+                    mass_lines: row.get(5)?,
+                    confidence: row.get(6)?,
+                    detectors: detectors.split(',').map(str::to_owned).collect(),
+                    finding_count: row.get(8)?,
+                    agreeing: Vec::new(),
+                    reason: row.get(10)?,
+                    acknowledged: row.get(11)?,
+                },
+                row.get::<_, String>(9)?,
+            ))
         })?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        let mut areas = Vec::new();
+        for row in rows {
+            let (mut area, agreeing) = row?;
+            area.agreeing = serde_json::from_str(&agreeing)?;
+            areas.push(area);
+        }
+        Ok(areas)
     }
 
     /// The findings of one area, biggest first.

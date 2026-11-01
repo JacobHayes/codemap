@@ -2,6 +2,19 @@
 import type { Axis, Hierarchy, Measure } from "./Query";
 
 /**
+ * Another area whose evidence covers these lines and which a different detector found.
+ */
+export type AgreeingArea = { 
+/**
+ * A path, or a group's id.
+ */
+subject: string, title: string, 
+/**
+ * The detectors of that area.
+ */
+detectors: Array<string>, };
+
+/**
  * The answer to a [`Query`].
  */
 export type Answer = { "kind": "overview" } & Overview | { "kind": "tree" } & Tree | { "kind": "xtab" } & Xtab | { "kind": "areas" } & AreaList | { "kind": "area" } & AreaDetail | { "kind": "source" } & Source | { "kind": "catalog" } & Catalog;
@@ -28,6 +41,11 @@ rank: number, opportunity: number, massLines: number, confidence: number,
  * The distinct detectors that agree, by name.
  */
 detectors: Array<string>, findingCount: number, 
+/**
+ * Areas that flag the same lines for another reason, best first. Their detectors count
+ * toward `opportunity` once each.
+ */
+agreeing: Array<AgreeingArea>, 
 /**
  * The biggest finding's reason: why the area stands out.
  */

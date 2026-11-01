@@ -75,7 +75,9 @@ your session.
 ## 2. Triage
 
 1. `codemap areas --top 15 --json`: ranked areas, each with the detectors that flagged it and
-   why. Narrow with `--path <dir>`, `--detector <name>` or the lines the findings touch:
+   why. An area's `agreeing` lists other areas whose evidence covers the same lines for a
+   different reason ("Also flagged by ..."); each stays its own area, and the extra detectors
+   raise its rank, so read them together. Narrow with `--path <dir>`, `--detector <name>` or the lines the findings touch:
    `--role test`, `--concern handler`, `--language rust`; `codemap catalog` lists
    detectors, measures and dimensions.
 2. `codemap area <subject> --json`: the findings, evidence (line ranges) and related areas

@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS findings (
     acknowledged VARCHAR);
 CREATE TABLE IF NOT EXISTS areas (
     subject VARCHAR, title VARCHAR, subject_kind VARCHAR, rank UINTEGER, opportunity DOUBLE, mass_lines DOUBLE,
-    confidence DOUBLE, detectors VARCHAR, finding_count UINTEGER, reason VARCHAR,
+    confidence DOUBLE, detectors VARCHAR, finding_count UINTEGER, agreeing VARCHAR, reason VARCHAR,
     acknowledged VARCHAR);
 CREATE OR REPLACE VIEW line_facts AS
     SELECT l.path, l.line, l.tokens, l.nodes, l.role, l.concern, l.symbol, f.language,

@@ -155,6 +155,14 @@ function AreaCard({ area, state, navigate }: { area: Area } & Common) {
         {area.acknowledged !== null && (
           <p className="muted">Acknowledged as essential: {area.acknowledged}</p>
         )}
+        {area.agreeing.map((other) => (
+          <p className="muted" key={other.subject}>
+            {`Also flagged by ${other.detectors.map(words).join(', ')}: `}
+            <Link state={state} patch={{ area: other.subject }} navigate={navigate}>
+              {other.title}
+            </Link>
+          </p>
+        ))}
         <div className="chips">
           {area.detectors.map((detector) => (
             <span className="badge ink" key={detector}>

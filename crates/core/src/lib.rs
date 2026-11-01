@@ -24,7 +24,7 @@ mod text;
 mod worktree;
 
 pub use config::{Acknowledgement, Config, ConfigError, Granularity, Inference, Rule, is_config};
-pub use detect::{Area, DETECTORS, Detector, Evidence, Finding, SubjectKind};
+pub use detect::{AgreeingArea, Area, DETECTORS, Detector, Evidence, Finding, SubjectKind};
 pub use event::Refresh;
 pub use facts::{FileFacts, LineFact, RefFact, SwitchFact, SymbolFact, SymbolKind, extract};
 pub use fingerprint::{Fingerprint, MINHASH_LEN};

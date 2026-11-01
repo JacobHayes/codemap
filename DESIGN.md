@@ -83,7 +83,8 @@ self-hosted.
 - **Measure picker.** Chooses the size and colour measures; shows the legend for the colour
   scale with its range in words and numbers.
 - **Area card.** In the queue: the subject's path (a group's title, which says the pattern and
-  how many places and files), one sentence on why it stands out, the detectors that agree as
+  how many places and files), one sentence on why it stands out, a line "Also flagged by
+  <detector>: <title>" linking to each area that agrees with it, the detectors that agree as
   chips, and its mass. Evidence and measures fold out; a file's or folder's card also lists the
   groups it belongs to with its share of each, and a group's lists its members. Acknowledged
   areas show their reason and sit below the rest.

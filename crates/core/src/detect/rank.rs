@@ -1,9 +1,10 @@
 //! Ranking: findings group into areas by the file or directory they sit in, or by the group they
 //! belong to (a group is its own area, however many files it spans). An area's
 //! opportunity is the number of distinct detectors that agree times the mass at stake (the
-//! largest finding's lines); confidence only breaks ties. Test code weighs less: an area's
-//! opportunity is discounted by its test share. Acknowledged areas rank after the rest and are
-//! counted, never hidden.
+//! largest finding's lines); confidence only breaks ties. Areas whose evidence covers the same
+//! lines agree: each keeps its own identity and lists the other, and the detectors of all of
+//! them count once. Test code weighs less: an area's opportunity is discounted by its test
+//! share. Acknowledged areas rank after the rest and are counted, never hidden.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use super::corpus::Corpus;
-use super::{Evidence, Finding, MEMBERS_LABEL, SubjectKind, TITLE_LABEL};
+use super::{Evidence, Finding, MEMBERS_LABEL, SubjectKind, TITLE_LABEL, distinct_lines_by_path};
 use crate::config::{Acknowledgement, Config};
 use crate::reader::{Index, QueryError};
 
@@ -22,6 +23,25 @@ use crate::reader::{Index, QueryError};
 /// rather than a partition lets an extreme test outlier still outrank a weak production one.
 /// A mixed area keeps a share in proportion to its test lines.
 pub(crate) const TEST_OPPORTUNITY_KEPT: f64 = 0.4;
+
+/// The share of lines two areas must have in common to agree: of the longer of two evidence
+/// ranges for them to match, and of the smaller area's evidence lines for the matches to count.
+/// Measured on a Rust, a TypeScript and a mixed codebase: pairs at a half or more were two
+/// detectors on the same code; the pairs below it were a case set sharing a third of its lines
+/// with a copied function.
+pub(crate) const AGREEMENT_OVERLAP_SHARE: f64 = 0.5;
+
+/// Another area whose evidence covers these lines and which a different detector found.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "Answer.ts")]
+pub struct AgreeingArea {
+    /// A path, or a group's id.
+    pub subject: String,
+    pub title: String,
+    /// The detectors of that area.
+    pub detectors: Vec<String>,
+}
 
 /// A location (file or directory) with the findings that point at it, or a group (copies, a
 /// naming family, a repeated switch) with its one finding.
@@ -43,6 +63,9 @@ pub struct Area {
     /// The distinct detectors that agree, by name.
     pub detectors: Vec<String>,
     pub finding_count: u32,
+    /// Areas that flag the same lines for another reason, best first. Their detectors count
+    /// toward `opportunity` once each.
+    pub agreeing: Vec<AgreeingArea>,
     /// The biggest finding's reason: why the area stands out.
     pub reason: String,
     /// The acknowledgements' reasons, when every finding is acknowledged.
@@ -145,10 +168,15 @@ pub fn rank(findings: &mut [Finding], test_shares: &[f64], config: &Config) -> V
             .or_default()
             .push((finding, share));
     }
+    let mut evidence: Vec<Evidenced> = Vec::with_capacity(groups.len());
     let mut areas: Vec<Area> = groups
         .into_iter()
-        .map(|(subject, group)| area_of(subject, &group))
+        .map(|(subject, group)| {
+            evidence.push(open_evidence(&group));
+            area_of(subject, &group)
+        })
         .collect();
+    agree(&mut areas, &evidence);
     areas.sort_by(|a, b| {
         a.acknowledged
             .is_some()
@@ -216,15 +244,139 @@ fn area_of(subject: &str, shared: &[(&Finding, f64)]) -> Area {
         confidence,
         detectors: detectors.into_iter().map(str::to_owned).collect(),
         finding_count: u32::try_from(group.len()).unwrap_or(u32::MAX),
+        agreeing: Vec::new(),
         reason,
         acknowledged,
     }
 }
 
-/// The evidence's line ranges with overlaps merged per file, so a line counts once.
-fn merged_ranges(evidence: &[Evidence]) -> Vec<(&str, u32, u32)> {
-    let mut sorted: Vec<(&str, u32, u32)> = evidence
+/// The line ranges an area's open findings point at, nested ones kept apart so that a function's
+/// range is not lost in its file's, and the detectors that found them. An acknowledged area has
+/// none: it ranks last and neither lends nor takes agreement. A finding without evidence (a rule
+/// on a whole file or directory) names no lines and takes no part.
+fn open_evidence<'a>(group: &[(&'a Finding, f64)]) -> Evidenced<'a> {
+    let open = group
         .iter()
+        .map(|&(f, _)| f)
+        .filter(|f| f.acknowledged.is_none() && !f.evidence.is_empty());
+    let mut ranges: Vec<Run> = Vec::new();
+    let mut detectors = BTreeSet::new();
+    for finding in open {
+        detectors.insert(finding.detector.as_str());
+        ranges.extend(
+            finding
+                .evidence
+                .iter()
+                .map(|e| (e.path.as_str(), e.start_line, e.end_line)),
+        );
+    }
+    ranges.sort_unstable();
+    ranges.dedup();
+    Evidenced { ranges, detectors }
+}
+
+/// The lines an area points at and the detectors that point at them.
+struct Evidenced<'a> {
+    ranges: Vec<Run<'a>>,
+    detectors: BTreeSet<&'a str>,
+}
+
+/// A line range of one file.
+type Run<'a> = (&'a str, u32, u32);
+
+/// For each pair of areas, the lines of their ranges that are mostly the same lines: a small
+/// range inside a whole file or directory says nothing about it.
+fn matching_lines<'a>(evidence: &[Evidenced<'a>]) -> BTreeMap<(usize, usize), Vec<Run<'a>>> {
+    let mut by_path: BTreeMap<&str, Vec<(usize, u32, u32)>> = BTreeMap::new();
+    for (i, found) in evidence.iter().enumerate() {
+        for &(path, start, end) in &found.ranges {
+            by_path.entry(path).or_default().push((i, start, end));
+        }
+    }
+    let mut matched: BTreeMap<(usize, usize), Vec<Run>> = BTreeMap::new();
+    for (&path, ranges) in &by_path {
+        for (n, &(a, a_start, a_end)) in ranges.iter().enumerate() {
+            for &(b, b_start, b_end) in &ranges[n + 1..] {
+                let (start, end) = (a_start.max(b_start), a_end.min(b_end));
+                let longer = (a_end - a_start).max(b_end - b_start) + 1;
+                if a != b
+                    && start <= end
+                    && f64::from(end - start + 1) >= AGREEMENT_OVERLAP_SHARE * f64::from(longer)
+                {
+                    matched
+                        .entry((a.min(b), a.max(b)))
+                        .or_default()
+                        .push((path, start, end));
+                }
+            }
+        }
+    }
+    matched
+}
+
+fn line_total(ranges: &[Run]) -> u32 {
+    distinct_lines_by_path(ranges.iter().copied())
+        .values()
+        .sum()
+}
+
+/// Links areas whose evidence covers the same lines, and counts the detectors of each area
+/// together with those of the areas it agrees with once each. Two areas agree when the matching
+/// lines cover [`AGREEMENT_OVERLAP_SHARE`] of the smaller one's lines, and each lists the other
+/// only when it brings a detector the first lacks; areas never merge, so each keeps its identity.
+fn agree(areas: &mut [Area], evidence: &[Evidenced]) {
+    let totals: Vec<u32> = evidence.iter().map(|e| line_total(&e.ranges)).collect();
+    let mut links: Vec<Vec<usize>> = vec![Vec::new(); areas.len()];
+    for ((a, b), ranges) in matching_lines(evidence) {
+        let smaller = f64::from(totals[a].min(totals[b]));
+        if f64::from(line_total(&ranges)) < AGREEMENT_OVERLAP_SHARE * smaller {
+            continue;
+        }
+        // Each area links to the other only when the other brings a detector it lacks.
+        for (to, from) in [(a, b), (b, a)] {
+            let brings = evidence[from]
+                .detectors
+                .iter()
+                .any(|d| !areas[to].detectors.iter().any(|own| own == d));
+            if brings {
+                links[to].push(from);
+            }
+        }
+    }
+    let snapshot = areas.to_vec();
+    for (area, others) in areas.iter_mut().zip(&mut links) {
+        let mut detectors: BTreeSet<&str> = area.detectors.iter().map(String::as_str).collect();
+        let own = u32::try_from(detectors.len()).unwrap_or(u32::MAX);
+        for &other in &*others {
+            detectors.extend(&evidence[other].detectors);
+        }
+        let all = u32::try_from(detectors.len()).unwrap_or(u32::MAX);
+        area.opportunity *= f64::from(all) / f64::from(own);
+        others.sort_by(|&x, &y| {
+            snapshot[y]
+                .mass_lines
+                .total_cmp(&snapshot[x].mass_lines)
+                .then(snapshot[x].subject.cmp(&snapshot[y].subject))
+        });
+        area.agreeing = others
+            .iter()
+            .map(|&other| AgreeingArea {
+                subject: snapshot[other].subject.clone(),
+                title: snapshot[other].title.clone(),
+                detectors: evidence[other]
+                    .detectors
+                    .iter()
+                    .map(|&d| d.to_owned())
+                    .collect(),
+            })
+            .collect();
+    }
+}
+
+/// The evidence's line ranges with overlaps merged per file, so a line counts once.
+fn merged_ranges<'a>(evidence: impl IntoIterator<Item = &'a Evidence>) -> Vec<(&'a str, u32, u32)> {
+    let mut sorted: Vec<(&str, u32, u32)> = evidence
+        .into_iter()
         .map(|e| (e.path.as_str(), e.start_line, e.end_line))
         .collect();
     sorted.sort_unstable();
@@ -313,5 +465,105 @@ mod tests {
         let areas = rank(&mut findings, &[0.5, 1.0], &Config::default());
         assert_eq!(areas[0].subject, "half");
         assert!(areas[0].opportunity > areas[1].opportunity);
+    }
+
+    fn flagged(detector: &str, area: &str, path: &str, runs: &[(u32, u32)]) -> Finding {
+        Finding::new(detector, SubjectKind::File, area, String::new(), 100.0, 0.5)
+            .evidence(path, runs)
+    }
+
+    fn area<'a>(areas: &'a [Area], subject: &str) -> &'a Area {
+        areas.iter().find(|a| a.subject == subject).unwrap()
+    }
+
+    #[test]
+    fn areas_over_the_same_lines_agree_and_count_their_detectors_together() {
+        let mut findings = vec![
+            flagged("size", "a", "f.rs", &[(10, 60)]),
+            flagged("parallel", "b", "f.rs", &[(12, 60)]),
+            flagged("size", "lone", "g.rs", &[(1, 50)]),
+        ];
+        let areas = rank(&mut findings, &[0.0; 3], &Config::default());
+        let (a, b) = (area(&areas, "a"), area(&areas, "b"));
+        assert_eq!(a.agreeing.len(), 1);
+        assert_eq!(a.agreeing[0].subject, "b");
+        assert_eq!(b.agreeing[0].subject, "a");
+        assert!(a.opportunity > 1.9 * area(&areas, "lone").opportunity);
+        assert_eq!(a.detectors, ["size"], "areas keep their own detectors");
+    }
+
+    #[test]
+    fn a_small_range_inside_a_large_one_is_not_agreement() {
+        let mut findings = vec![
+            flagged("size", "big", "f.rs", &[(1, 1000)]),
+            flagged("parallel", "small", "f.rs", &[(40, 60)]),
+        ];
+        let areas = rank(&mut findings, &[0.0; 2], &Config::default());
+        assert!(areas.iter().all(|a| a.agreeing.is_empty()));
+    }
+
+    #[test]
+    fn one_detector_does_not_agree_with_itself_and_acknowledged_areas_stay_apart() {
+        let mut findings = vec![
+            flagged("size", "a", "f.rs", &[(1, 50)]),
+            flagged("size", "b", "f.rs", &[(1, 50)]),
+            flagged("parallel", "c", "f.rs", &[(1, 50)]),
+        ];
+        let config = Config {
+            acknowledgements: vec![Acknowledgement {
+                path: Some("c".to_owned()),
+                group: None,
+                detector: None,
+                members: Vec::new(),
+                reason: "essential".to_owned(),
+            }],
+            ..Config::default()
+        };
+        let areas = rank(&mut findings, &[0.0; 3], &config);
+        assert!(areas.iter().all(|a| a.agreeing.is_empty()));
+    }
+
+    #[test]
+    fn a_function_inside_a_flagged_file_still_agrees_by_its_own_range() {
+        let mut findings = vec![
+            flagged("size", "f.rs", "f.rs", &[(1, 500)]),
+            flagged("size", "f.rs", "f.rs", &[(200, 292)]),
+            flagged("duplication", "copies", "f.rs", &[(200, 290)]),
+        ];
+        let areas = rank(&mut findings, &[0.0; 3], &Config::default());
+        assert_eq!(area(&areas, "f.rs").agreeing.len(), 1);
+    }
+
+    #[test]
+    fn a_finding_without_evidence_lends_no_detector() {
+        let rule = Finding::new(
+            "rules",
+            SubjectKind::File,
+            "f.rs",
+            String::new(),
+            100.0,
+            0.5,
+        );
+        let mut findings = vec![
+            flagged("size", "f.rs", "f.rs", &[(1, 50)]),
+            rule,
+            flagged("duplication", "copies", "f.rs", &[(1, 50)]),
+        ];
+        let areas = rank(&mut findings, &[0.0; 3], &Config::default());
+        let copies = area(&areas, "copies");
+        assert_eq!(copies.agreeing[0].detectors, ["size"]);
+        assert!((copies.opportunity - 2.0 * copies.mass_lines).abs() < 1e-9);
+    }
+
+    #[test]
+    fn an_area_lists_only_areas_that_bring_a_detector_it_lacks() {
+        let mut findings = vec![
+            flagged("size", "wide", "f.rs", &[(1, 50)]),
+            flagged("parallel", "wide", "f.rs", &[(1, 50)]),
+            flagged("size", "narrow", "f.rs", &[(1, 50)]),
+        ];
+        let areas = rank(&mut findings, &[0.0; 3], &Config::default());
+        assert_eq!(area(&areas, "wide").agreeing, []);
+        assert_eq!(area(&areas, "narrow").agreeing.len(), 1);
     }
 }

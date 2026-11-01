@@ -4,8 +4,8 @@
 use std::fmt::Write as _;
 
 use codemap_core::{
-    Answer, Area, AreaDetail, AreaList, Catalog, Finding, Hidden, Overview, SOURCE_LINES_MAX,
-    Share, Source, SubjectKind, Tree, TreeNode, Xtab,
+    AgreeingArea, Answer, Area, AreaDetail, AreaList, Catalog, Finding, Hidden, Overview,
+    SOURCE_LINES_MAX, Share, Source, SubjectKind, Tree, TreeNode, Xtab,
 };
 
 /// Children listed under one tile before the rest are summarised.
@@ -374,8 +374,25 @@ fn areas_text(list: &AreaList) -> String {
         if area.subject_kind == SubjectKind::Group {
             let _ = writeln!(out, "      id: {}", area.subject);
         }
+        for other in &area.agreeing {
+            let _ = writeln!(out, "      {}", also_flagged(other));
+        }
     }
     out
+}
+
+/// "Also flagged by size: crates/a.rs", with the id a group is asked for by.
+fn also_flagged(other: &AgreeingArea) -> String {
+    let id = if other.subject == other.title {
+        String::new()
+    } else {
+        format!(" ({})", other.subject)
+    };
+    format!(
+        "Also flagged by {}: {}{id}",
+        other.detectors.join(", "),
+        other.title
+    )
 }
 
 fn area_row(area: &Area) -> Vec<String> {
@@ -431,6 +448,9 @@ fn area_text(detail: &AreaDetail) -> String {
         }
         if let Some(why) = &area.acknowledged {
             let _ = writeln!(out, "acknowledged: {why}");
+        }
+        for other in &area.agreeing {
+            let _ = writeln!(out, "{}", also_flagged(other));
         }
     } else {
         out.push_str("no area of its own; only part of the groups below\n");

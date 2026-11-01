@@ -238,6 +238,18 @@ Test code weighs less: an area's opportunity is discounted in proportion to its 
 lines, a named constant, so test areas rank behind production areas of comparable mass while an
 extreme outlier can still lead. Test areas are never hidden; the role filter isolates them.
 
+Areas **agree** when their evidence covers the same lines: matching ranges are those that are
+mostly the same lines (a share of the longer one, so a small range inside a whole file or directory
+matches nothing; nested ranges count each by itself), and the matched lines must cover a named share of the smaller area's evidence
+lines. Either kind of area agrees with either, so a size outlier inside a duplicate family or a
+repeated switch inside copied functions agree. An area agrees only with an area that brings a
+detector it lacks; acknowledged areas, and findings that name no lines (a rule on a whole
+file), neither give nor take agreement. Agreeing areas are never
+merged: each keeps its card, its group id and its acknowledgements, and lists the others as
+`agreeing` ("Also flagged by <detector>: <title>"). An area's opportunity counts the distinct
+detectors of the area and of everything it agrees with, so agreement raises it the way detectors on
+one subject do; the mass stays its own.
+
 A group ranks by its sites' lines counted once. A place that reports disproportion (composition,
 size) ranks by its excess over the peer median, not its total, so a large directory does not
 outrank every pattern for its size alone.
