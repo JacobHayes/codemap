@@ -115,7 +115,9 @@ erDiagram
   role, concern and the innermost symbol. A line has one role and one concern, taken from the
   innermost classified node that covers it.
 - **`symbols`**: modules, types, functions, tests and document sections, each with its line
-  range, parent and content hash.
+  range, parent and content hash. A type continued elsewhere in its scope (a Rust `struct` and
+  its `impl` blocks) is one symbol: the blocks' lines are the type's and their methods its
+  children.
 - **`refs`** are names as written; **`edges`** are references resolved to symbols, with a
   confidence, because resolution is by name and can be ambiguous (the rules are in
   `core/src/link.rs`). Symbols also record, from their shape alone, the callee a function only

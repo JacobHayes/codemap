@@ -1,7 +1,9 @@
 //! TypeScript and TSX: the JavaScript table plus the grammars' own tags query.
 
 use crate::Language;
-use crate::javascript::{ASSERTION_PREFIXES, CASE_LABEL_FIELDS, KINDS, LOGGING_CALLEES, TEST_TAGS_QUERIES, mark};
+use crate::javascript::{
+    ASSERTION_PREFIXES, CASE_LABEL_FIELDS, KINDS, LOGGING_CALLEES, TEST_TAGS_QUERIES, mark,
+};
 
 pub static TYPESCRIPT: Language = Language {
     name: "typescript",

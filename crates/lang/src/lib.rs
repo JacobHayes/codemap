@@ -144,8 +144,9 @@ pub struct Language {
     pub kinds: &'static [(&'static str, Kind)],
     /// The grammar crate's tags query: definitions become symbols, references become refs.
     pub tags_query: &'static str,
-    /// Further patterns the tags query leaves out: scopes such as Rust `impl` blocks (so a
-    /// method's parent is its type), and `@reference.implementation` for what a type implements
+    /// Further patterns the tags query leaves out: scopes such as Rust `impl` blocks, tagged
+    /// `@extension.class`: a scope that continues the type of that name declared in the same
+    /// scope, so the type is one symbol (lines and methods) and the block is not a symbol, and `@reference.implementation` for what a type implements
     /// or extends, which is how the single-implementation signal finds implementors.
     pub extra_tags_queries: &'static [&'static str],
     /// Where a case of a `Switch` keeps what it matches: a field name, or the kind of a child

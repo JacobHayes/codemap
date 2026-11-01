@@ -286,7 +286,8 @@ fn symbols_and_refs(
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(query, tree.root_node(), source);
     // Keyed by byte range so a definition several patterns match (methods) counts once.
-    let mut definitions: BTreeMap<(usize, usize), (SymbolKind, String, Node)> = BTreeMap::new();
+    let mut definitions: BTreeMap<(usize, usize), (SymbolKind, String, Node, bool)> =
+        BTreeMap::new();
     let mut refs = Vec::new();
     while let Some(found) = matches.next() {
         let mut name = None;
@@ -320,32 +321,83 @@ fn symbols_and_refs(
         } else if let Some(kind) = definition_kind(tag, language, &node, source) {
             definitions
                 .entry((node.start_byte(), node.end_byte()))
-                .or_insert((kind, name.to_owned(), node));
+                .or_insert((kind, name.to_owned(), node, tag.starts_with("extension.")));
         }
     }
     let mut ordered: Vec<_> = definitions.into_iter().collect();
     ordered.sort_by_key(|((start, end), _)| (*start, std::cmp::Reverse(*end)));
+    let (symbols, line_symbols) = nest(language, kinds, source, &ordered, line_count);
+    (symbols, refs, line_symbols)
+}
+
+/// One definition found by the tags query, keyed by byte range.
+type Definition<'t> = ((usize, usize), (SymbolKind, String, Node<'t>, bool));
+
+/// For each definition that is an extension, the index of the type it continues: the first type
+/// of the same name declared in the same syntax block.
+fn merge_targets(ordered: &[Definition]) -> Vec<Option<usize>> {
+    ordered
+        .iter()
+        .map(|(_, (_, name, node, extension))| {
+            extension
+                .then(|| {
+                    ordered
+                        .iter()
+                        .position(|(_, (kind, other, found, other_extension))| {
+                            *kind == SymbolKind::Type
+                                && !other_extension
+                                && other == name
+                                && found.parent().map(|parent| parent.id())
+                                    == node.parent().map(|parent| parent.id())
+                        })
+                })
+                .flatten()
+        })
+        .collect()
+}
+
+/// Symbols in nesting order. An extension (a Rust `impl` block) that continues a type in the same
+/// scope is not a symbol: its lines belong to that type and its members are the type's children,
+/// so the type is one symbol however many places declare it. An extension with no such type is a
+/// symbol of its own.
+fn nest(
+    language: &Language,
+    kinds: &[Option<Kind>],
+    source: &[u8],
+    ordered: &[Definition],
+    line_count: usize,
+) -> (Vec<SymbolFact>, Vec<Option<u32>>) {
+    let targets = merge_targets(ordered);
+    let mut symbol_of = Vec::with_capacity(ordered.len());
+    let mut count = 0_u32;
+    for target in &targets {
+        symbol_of.push(count);
+        count += u32::from(target.is_none());
+    }
     let mut symbols: Vec<SymbolFact> = Vec::new();
-    let mut ranges: Vec<(usize, usize)> = Vec::new();
-    let mut open: Vec<usize> = Vec::new();
+    // The symbol that owns what is declared inside each open range.
+    let mut open: Vec<(u32, usize, usize)> = Vec::new();
     let mut line_symbols = vec![None; line_count];
-    for ((start, end), (kind, name, node)) in ordered {
+    for (at, &((start, end), (kind, ref name, node, _))) in ordered.iter().enumerate() {
         while open
             .last()
-            .is_some_and(|&top| !(ranges[top].0 <= start && end <= ranges[top].1))
+            .is_some_and(|&(_, top_start, top_end)| !(top_start <= start && end <= top_end))
         {
             open.pop();
         }
         let (first, last) = rows(&node);
-        let index = u32::try_from(symbols.len()).unwrap_or(u32::MAX);
+        if let Some(target) = targets[at] {
+            line_symbols[first..=last].fill(Some(symbol_of[target]));
+            open.push((symbol_of[target], start, end));
+            continue;
+        }
+        let index = symbol_of[at];
         line_symbols[first..=last].fill(Some(index));
         let (forwards, abstraction) = shape_of(kind, language, kinds, &node, source);
         symbols.push(SymbolFact {
             kind,
-            name,
-            parent: open
-                .last()
-                .map(|&top| u32::try_from(top).unwrap_or(u32::MAX)),
+            name: name.clone(),
+            parent: open.last().map(|&(owner, ..)| owner),
             start_line: to_line(first),
             end_line: to_line(last),
             content_hash: blake3::hash(&source[start..end]).to_hex().to_string(),
@@ -353,10 +405,9 @@ fn symbols_and_refs(
             forwards,
             abstraction,
         });
-        open.push(symbols.len() - 1);
-        ranges.push((start, end));
+        open.push((index, start, end));
     }
-    (symbols, refs, line_symbols)
+    (symbols, line_symbols)
 }
 
 /// Functions and tests of at least [`LINES_MIN`] lines get fingerprints.
@@ -380,7 +431,10 @@ fn definition_kind(
     node: &Node,
     source: &[u8],
 ) -> Option<SymbolKind> {
-    match tag.strip_prefix("definition.")? {
+    match tag
+        .strip_prefix("definition.")
+        .or_else(|| tag.strip_prefix("extension."))?
+    {
         "class" | "interface" => Some(SymbolKind::Type),
         "module" | "group" => Some(SymbolKind::Module),
         "test" => Some(SymbolKind::Test),

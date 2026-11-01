@@ -63,8 +63,8 @@ fn rust_symbols_nest_and_tests_are_tests() {
             expect("area", "function", None, 9, 19),
             expect("tests", "module", None, 22, 29),
             expect("area_is_positive", "test", Some("tests"), 26, 28),
-            // Methods sit under the type their `impl` block names.
-            expect("Shape", "type", None, 31, 47),
+            // Methods sit under the type their `impl` block names, which is not a symbol of
+            // its own.
             expect("sides", "function", Some("Shape"), 32, 34),
             expect("checked", "function", Some("Shape"), 36, 46),
         ]
@@ -336,4 +336,53 @@ fn test_runner_calls_are_test_symbols_and_suites_are_groups() {
             entry("doesn't break", "test", Some("flows")),
         ]
     );
+}
+
+#[test]
+fn rust_impl_blocks_continue_the_type_in_their_scope() {
+    let tree = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tree.path().join("a.rs"),
+        "impl Early {\n    fn make() {}\n}\n\nstruct Early;\n\nmod one {\n    struct Twin;\n    impl Twin {\n        fn a() {}\n    }\n}\n\nmod two {\n    struct Twin;\n    impl Twin {\n        fn b() {}\n    }\n}\n\nfn local() {\n    struct L;\n    impl L {\n        fn x() {}\n    }\n    {\n        struct L;\n        impl L {\n            fn y() {}\n        }\n    }\n}\n\nimpl Foreign {\n    fn c() {}\n}\n",
+    )
+    .unwrap();
+    index(tree.path()).unwrap();
+    let found: Vec<_> = symbols(tree.path(), "a.rs")
+        .into_iter()
+        .map(|(name, kind, parent, ..)| (name, kind, parent))
+        .collect();
+    let entry = |name: &str, kind: &str, parent: Option<&str>| {
+        (name.to_owned(), kind.to_owned(), parent.map(str::to_owned))
+    };
+    assert_eq!(
+        found,
+        vec![
+            entry("make", "function", Some("Early")),
+            entry("Early", "type", None),
+            entry("one", "module", None),
+            entry("Twin", "type", Some("one")),
+            entry("a", "function", Some("Twin")),
+            entry("two", "module", None),
+            entry("Twin", "type", Some("two")),
+            entry("b", "function", Some("Twin")),
+            entry("local", "function", None),
+            entry("L", "type", Some("local")),
+            entry("x", "function", Some("L")),
+            entry("L", "type", Some("local")),
+            entry("y", "function", Some("L")),
+            // No type of this name in the file: the block stands for it.
+            entry("Foreign", "type", None),
+            entry("c", "function", Some("Foreign")),
+        ]
+    );
+    // The `impl` lines of a type count as that type's lines.
+    let owner: String = crate::common::open(tree.path())
+        .query_row(
+            "SELECT s.name FROM lines l JOIN symbols s ON s.id = l.symbol
+             WHERE l.path = 'a.rs' AND l.line = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(owner, "Early");
 }

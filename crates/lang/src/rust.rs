@@ -29,10 +29,10 @@ pub static RUST: Language = Language {
         ("use_declaration", Kind::Import),
     ],
     tags_query: tree_sitter_rust::TAGS_QUERY,
-    // An `impl` block is a scope named for its type. The grammar's query reads only `impl Trait
+    // An `impl` block is an extension of its type: the type's lines and the methods' parent. The grammar's query reads only `impl Trait
     // for T` with a bare trait name, so scoped and generic traits are added.
     extra_tags_queries: &[
-        "(impl_item type: (_) @name) @definition.class",
+        "(impl_item type: (_) @name) @extension.class",
         "(impl_item trait: (scoped_type_identifier name: (type_identifier) @name)) @reference.implementation",
         "(impl_item trait: (generic_type type: [(type_identifier) @name (scoped_type_identifier name: (type_identifier) @name)])) @reference.implementation",
     ],
