@@ -118,3 +118,22 @@ while iterating. A step that runs no tests, or a missing tool, fails.
 - An output change is shown with a few lines of real output.
 - One logical commit per unit of work, with its tests and document changes. A change that
   alters what a document says rewrites that line in the same commit.
+
+## Releases
+
+A release is cut by hand: dispatch the `release` workflow on `main` with `bump` set to `patch`,
+`minor` or `major` (Actions, release, Run workflow). Tags are `vX.Y.Z`; `scripts/next-version`
+picks the next from the existing tags, and the first release is `v0.1.0`.
+
+- **Gate.** The workflow refuses unless it runs on `main`, the `check` workflow passed on that
+  exact commit, and the tag is free. A failed run is dispatched again, never re-run.
+- **Build.** Each target builds natively: the web app first, then DuckDB's prebuilt libraries
+  (`scripts/duckdb`), then `cargo build --release` with `CODEMAP_VERSION` set to the version
+  without its `v`. Targets: Linux x86_64 and aarch64 on GitHub-hosted runners, macOS aarch64 only
+  on the self-hosted `jrh-mini` runner, never a GitHub-hosted macOS one.
+- **Publish.** Only after every target built, one job creates the tag at the built commit and the
+  GitHub release with `codemap-vX.Y.Z-TARGET.tar.gz` archives and their `.sha256` files
+  (`scripts/package`).
+- **Version.** Crate versions stay `0.0.0`. The injected version is shown by `codemap --version`,
+  the `serve` startup line and the MCP server info, and reads `dev` in any other build. It is for
+  people: the index's build id, a digest of the sources, alone decides whether an index is stale.

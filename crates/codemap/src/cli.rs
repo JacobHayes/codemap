@@ -11,7 +11,7 @@ use crate::args::{AreaArgs, AreasArgs, SourceArgs, TreeArgs, XtabArgs};
 use crate::{mcp, render, serve};
 
 #[derive(Debug, Parser)]
-#[command(version, about = "A profiler for code mass and structure")]
+#[command(version = crate::VERSION, about = "A profiler for code mass and structure")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

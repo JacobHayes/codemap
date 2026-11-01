@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Packages the release binary for one target: `scripts/package vX.Y.Z TARGET` writes
+# dist/release/codemap-vX.Y.Z-TARGET.tar.gz (the `codemap` binary) and its .sha256 beside it.
+# Run after `cargo build --release` on that target (PRACTICES, Releases).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+[ $# -eq 2 ] || { echo "usage: package vX.Y.Z TARGET" >&2; exit 2; }
+version=$1 target=$2
+name="codemap-$version-$target"
+out=dist/release
+
+mkdir -p "$out"
+tar -czf "$out/$name.tar.gz" -C target/release codemap
+cd "$out"
+if command -v sha256sum >/dev/null; then sha256sum "$name.tar.gz"; else shasum -a 256 "$name.tar.gz"; fi >"$name.tar.gz.sha256"

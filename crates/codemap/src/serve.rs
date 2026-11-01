@@ -182,7 +182,7 @@ pub fn run(root: &Path, port: u16) -> Result<(), ServeError> {
             .await
             .map_err(|source| ServeError::Bind { port, source })?;
         let bound = listener.local_addr().map_err(ServeError::Serve)?;
-        println!("codemap serving http://{bound}");
+        println!("codemap {} serving http://{bound}", crate::VERSION);
         axum::serve(listener, router(served))
             .await
             .map_err(ServeError::Serve)
