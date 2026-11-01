@@ -5,12 +5,22 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-gen() {
-  rm -rf web/src/generated
-  cargo test --locked -p codemap-core export_bindings
+gen() (  # a subshell, so the cleanup trap is its own
+  # Export beside the destination and swap it in only once the tests pass, so a failed or
+  # interrupted build leaves the committed types untouched and stale files still disappear.
+  out=web/src/generated
+  tmp=$(mktemp -d web/src/.generated.XXXXXX)
+  trap 'rm -rf "$tmp"' EXIT
+  trap 'exit 130' INT TERM
+  TS_RS_EXPORT_DIR="$PWD/$tmp" cargo test --locked -p codemap-core export_bindings
+  [ -n "$(ls -A "$tmp")" ]
+  rm -rf "$out.old"
+  [ ! -e "$out" ] || mv "$out" "$out.old"
+  mv "$tmp" "$out"
+  rm -rf "$out.old"
   # CI fails when regenerating changed anything, new files included.
   [ -z "${CI:-}" ] || [ -z "$(git status --porcelain web/src/generated)" ]
-}
+)
 
 [ "${1:-}" != gen ] || { gen; exit; }  # `mise run gen`
 
