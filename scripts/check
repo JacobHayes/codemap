@@ -77,19 +77,15 @@ phase
 step gen gen || true; phase
 step build-web web npm run build || true; phase
 
-# The binary embeds the UI build, so Playwright follows build-bin. The Rust tests rewrite the wire
-# types the web steps read, so they follow those. Cargo serializes its own builds on the target dir
-# lock.
+# The binary embeds the UI build, so Playwright follows build-bin. Cargo serializes its own builds
+# on the target dir lock.
 step clippy cargo clippy --all-targets --locked -- -D warnings &
 step machete cargo machete &
-{
-  step tsc web npx tsc --noEmit &
-  step eslint web npx eslint --max-warnings 0 . &
-  step knip web npx knip &
-  step vitest --tests web npx vitest run &
-  wait
-  step cargo-test --tests cargo test --locked
-} &
+step tsc web npx tsc --noEmit &
+step eslint web npx eslint --max-warnings 0 . &
+step knip web npx knip &
+step vitest --tests web npx vitest run &
+step cargo-test --tests cargo test --locked &
 { step build-bin cargo build --locked && step playwright --tests web npx playwright test; } &
 phase
 

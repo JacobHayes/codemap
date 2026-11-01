@@ -1,6 +1,7 @@
-# Every test run exports the wire types where the web app imports them from, never beside the crate.
+# Test runs export the wire types under the target dir; only `scripts/check gen` writes
+# web/src/generated, by overriding this.
 [env]
-TS_RS_EXPORT_DIR = { value = "web/src/generated", relative = true }
+TS_RS_EXPORT_DIR = { value = "target/ts-rs", relative = true }
 # Link DuckDB's prebuilt static libraries, which `scripts/duckdb` fetches into `.duckdb/lib`.
 DUCKDB_STATIC = "1"
 DUCKDB_LIB_DIR = { value = ".duckdb/lib", relative = true }
