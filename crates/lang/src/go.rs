@@ -12,6 +12,7 @@ const EMBEDDED_FIELD: &str = "(type_spec type: (struct_type (field_declaration_l
 
 pub static GO: Language = Language {
     name: "go",
+    type_scope: None,
     extensions: &["go"],
     grammar: || tree_sitter_go::LANGUAGE.into(),
     kinds: &[

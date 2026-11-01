@@ -4,6 +4,7 @@ use crate::{Concern, Kind, Language, Mark, Node, Role};
 
 pub static RUST: Language = Language {
     name: "rust",
+    type_scope: Some("rust"),
     extensions: &["rs"],
     grammar: || tree_sitter_rust::LANGUAGE.into(),
     kinds: &[

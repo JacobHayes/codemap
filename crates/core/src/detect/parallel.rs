@@ -30,9 +30,12 @@
 //! real arms among identical trivial ones (a missing accessor), arms that only map cases to
 //! constants (a missing table), and arms for different cases with the same body (the logic
 //! written once per variant). A match over a tuple is a site of each enum in a position that
-//! varies, and a position with fewer cases than a set needs may join one by name. Sites whose arms are distinct behaviour do not count, and a set
-//! needs [`FLAGGED_SITES_MIN`] flagged sites: one on its own is a linter's finding. Sets of
-//! string or number literals are untyped tags and count every site.
+//! varies, and a position with fewer cases than a set needs may join one by name. Sites whose
+//! arms are distinct behaviour do not count, and a set needs [`FLAGGED_SITES_MIN`] flagged
+//! sites: one on its own is a linter's finding. Sets of string or number literals are untyped
+//! tags and count every site. A set whose cases are all qualified by a type the indexed code
+//! does not define belongs to a dependency: its catch-alls are safe and stop counting, and its
+//! tables and repeated bodies still do.
 //!
 //! Each is one finding, its own area: the evidence lists every member or site and the mass is
 //! their distinct lines. A family's id is a digest of its stem and kind class and a
@@ -339,6 +342,8 @@ struct Site {
     duplicated: bool,
     /// One position of a tuple match.
     partial: bool,
+    /// Where a type with no definition in the index is a dependency's, if anywhere.
+    type_scope: Option<String>,
 }
 
 impl Site {
@@ -376,8 +381,9 @@ fn is_literal(label: &str) -> bool {
 fn discriminators(index: &Index) -> Result<Vec<CaseSet>, QueryError> {
     let mut statement = index.store().connection().prepare(
         "SELECT w.path, w.start_line, w.end_line, w.labels, l.role,
-                w.wildcard, w.table_like, w.degenerate, w.symbol, w.duplicated, w.partial
+                w.wildcard, w.table_like, w.degenerate, w.symbol, w.duplicated, w.partial, f.type_scope
          FROM switches w JOIN lines l ON l.path = w.path AND l.line = w.start_line
+         JOIN files f ON f.path = w.path
          ORDER BY w.labels, w.path, w.start_line",
     )?;
     let keys = index.member_keys()?;
@@ -397,6 +403,7 @@ fn discriminators(index: &Index) -> Result<Vec<CaseSet>, QueryError> {
                 degenerate: row.get(7)?,
                 duplicated: row.get(9)?,
                 partial: row.get(10)?,
+                type_scope: row.get(11)?,
             },
             row.get::<_, String>(3)?,
             row.get::<_, String>(4)?,
@@ -426,9 +433,72 @@ fn discriminators(index: &Index) -> Result<Vec<CaseSet>, QueryError> {
             literal: true,
         })
         .collect();
-    found.extend(cluster(named));
+    let defined = defined_types(index)?;
+    found.extend(cluster(named).into_iter().map(|mut set| {
+        // A dependency's enum cannot grow a case, so its catch-alls are safe; its tables and
+        // repeated bodies are still a smell.
+        if !defined_here(&set, &defined) {
+            for site in &mut set.sites {
+                site.wildcard = false;
+            }
+        }
+        set
+    }));
     found.retain(|set| set.sites.len() >= SITES_MIN);
     Ok(found)
+}
+
+/// Top-level (or module-level) type names by scope: an associated type, or a type of a language
+/// outside the scope that shares a name, does not make a dependency's enum local.
+fn defined_types(index: &Index) -> Result<BTreeSet<(String, String)>, QueryError> {
+    let mut statement = index.store().connection().prepare(
+        "SELECT f.type_scope, s.name
+         FROM symbols s JOIN files f ON f.path = s.path
+         LEFT JOIN symbols p ON p.id = s.parent
+         WHERE f.type_scope IS NOT NULL AND (p.id IS NULL OR p.kind = 'module')",
+    )?;
+    let rows = statement.query_map(params![], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// The type a path-qualified case belongs to: `Value` in `serde_json::Value::Null`. A binding
+/// (`x @ Kind::A`) is not part of the path, and a field access (`TAGS.a`) is not a type.
+fn qualifier(label: &str) -> Option<&str> {
+    let (path, _) = label.rsplit_once("::")?;
+    let path = path.rsplit('@').next().unwrap_or(path).trim();
+    // `Kind::<u8>::A` has the generic arguments between the type and the case.
+    let path = path.split('<').next().unwrap_or(path);
+    path.rsplit(':').find(|part| !part.is_empty())
+}
+
+/// Whether a set could grow a case in this codebase, so its catch-alls matter. A set whose cases are all qualified by a
+/// type that nothing in the indexed code defines (`Value::Null` with no `Value` here) belongs to
+/// a dependency, which cannot gain cases under the code that matches on it. A name counts when
+/// a top-level (or module-level) symbol of that name is in the type scope of the matching code.
+/// A site whose language has no type scope proves nothing and keeps the set. It cannot see an
+/// enum imported under another name (`use a::Real as Alias` looks external), an enum declared
+/// by a macro, a dependency's type that shares a name with a local one (looks local), or a type
+/// nested in another.
+fn defined_here(set: &CaseSet, defined: &BTreeSet<(String, String)>) -> bool {
+    let scopes: Option<BTreeSet<&str>> = set
+        .sites
+        .iter()
+        .map(|site| site.type_scope.as_deref())
+        .collect();
+    let Some(scopes) = scopes else {
+        return true;
+    };
+    set.labels.iter().any(|label| match qualifier(label) {
+        // `Self::A` is the enum of the impl, and `crate::A` names a re-export, which is
+        // resolved by name only.
+        Some(name) => {
+            matches!(name, "Self" | "crate" | "self" | "super")
+                || scopes
+                    .iter()
+                    .any(|&scope| defined.contains(&(scope.to_owned(), name.to_owned())))
+        }
+        None => true,
+    })
 }
 
 /// Groups case sets that are mostly the same cases, the largest first: the biggest set stands

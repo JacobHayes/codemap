@@ -4,6 +4,7 @@ use crate::{Concern, Kind, Language, Mark, Node, Role};
 
 pub static PYTHON: Language = Language {
     name: "python",
+    type_scope: None,
     extensions: &["py", "pyi"],
     grammar: || tree_sitter_python::LANGUAGE.into(),
     kinds: &[

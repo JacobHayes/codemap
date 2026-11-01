@@ -147,6 +147,11 @@ pub struct GeneratedHeader {
 /// A language as data.
 pub struct Language {
     pub name: &'static str,
+    /// Names the group of languages whose types can name each other when every type that
+    /// qualifies a case (an enum) is a symbol of the index, so a type with no definition is a
+    /// dependency's. `None` where it is not: enums, type aliases and constant objects, modules
+    /// and packages qualify cases without being symbols.
+    pub type_scope: Option<&'static str>,
     /// File extensions without the dot, lowercase.
     pub extensions: &'static [&'static str],
     pub grammar: fn() -> tree_sitter::Language,

@@ -18,7 +18,8 @@ const STATE_GITIGNORE: &str = "*\n!.gitignore\n!config.toml\n";
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (key VARCHAR, value VARCHAR);
 CREATE TABLE IF NOT EXISTS files (
-    path VARCHAR, hash VARCHAR, size_bytes UBIGINT, language VARCHAR, role VARCHAR, is_binary BOOLEAN);
+    path VARCHAR, hash VARCHAR, size_bytes UBIGINT, language VARCHAR, role VARCHAR, is_binary BOOLEAN,
+    type_scope VARCHAR);
 CREATE TABLE IF NOT EXISTS lines (
     path VARCHAR, line UINTEGER, tokens UINTEGER, nodes UINTEGER, depth UINTEGER,
     role VARCHAR, concern VARCHAR, symbol VARCHAR);
@@ -237,7 +238,8 @@ impl Store {
                 facts.size_bytes,
                 facts.language,
                 facts.role.as_str(),
-                facts.binary
+                facts.binary,
+                facts.type_scope
             ])?;
             for (index, line) in facts.lines.iter().enumerate() {
                 line_rows.append_row(params![
@@ -318,13 +320,13 @@ mod tests {
         let files = |store: &Store| store.totals().expect("counts").0;
         writer
             .connection()
-            .execute_batch("INSERT INTO files VALUES ('a', 'h', 1, 'text', 'docs', false)")
+            .execute_batch("INSERT INTO files VALUES ('a', 'h', 1, 'text', 'docs', false, NULL)")
             .expect("seeds");
 
         writer.begin().expect("begins");
         writer
             .connection()
-            .execute_batch("INSERT INTO files VALUES ('b', 'h', 1, 'text', 'docs', false)")
+            .execute_batch("INSERT INTO files VALUES ('b', 'h', 1, 'text', 'docs', false, NULL)")
             .expect("writes");
         assert_eq!(files(&writer), 2);
         assert_eq!(files(&reader), 1);

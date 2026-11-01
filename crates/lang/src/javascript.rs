@@ -88,6 +88,7 @@ pub(crate) const TEST_TAGS_QUERIES: &[&str] = &[
 
 pub static JAVASCRIPT: Language = Language {
     name: "javascript",
+    type_scope: None,
     extensions: &["js", "jsx", "mjs", "cjs"],
     grammar: || tree_sitter_javascript::LANGUAGE.into(),
     kinds: KINDS,

@@ -3,7 +3,18 @@
 
 use codemap_core::SubjectKind;
 
-use crate::common::{baseline, findings_of, indexed, write};
+use crate::common::{baseline as plain_baseline, findings_of, indexed, write};
+
+/// The ordinary files, and the enums the fixtures match on: a set belongs to a type of the
+/// codebase.
+fn baseline(root: &std::path::Path, files: usize) {
+    plain_baseline(root, files);
+    write(
+        root,
+        "src/types.rs",
+        "pub struct Kind;\npub struct Field;\npub struct Payload;\npub struct Mode;\n",
+    );
+}
 
 fn signal(index: &codemap_core::Index, signal: &str) -> Vec<codemap_core::Finding> {
     findings_of(index, "parallel")
@@ -716,4 +727,174 @@ fn tuple_matches_are_sites_of_the_enum_in_each_position_that_varies() {
         assert_eq!(finding.measures["duplicatedSites"], 3.0);
         assert_eq!(finding.measures["wildcardSites"], 3.0);
     }
+}
+
+#[test]
+fn a_type_the_codebase_does_not_define_cannot_grow_so_only_its_catch_alls_stop_counting() {
+    let dir = tempfile::tempdir().unwrap();
+    plain_baseline(dir.path(), 5);
+    for name in ["a", "b", "c"] {
+        write(
+            dir.path(),
+            &format!("src/{name}.rs"),
+            &behaviour(
+                name,
+                &["Value::Null", "Value::Bool", "Value::Number"],
+                Some("_ => 0"),
+            )
+            .replace("Kind", "Value"),
+        );
+    }
+    // `Value` is a dependency's: it cannot gain a case under this code.
+    assert!(sites(&indexed(dir.path())).is_empty());
+    write(
+        dir.path(),
+        "src/value.rs",
+        "pub enum Value {\n    Null,\n}\n",
+    );
+    assert_eq!(sites(&indexed(dir.path())).len(), 1);
+
+    // Tables over a dependency's enum are still a missing table.
+    let tables = tempfile::tempdir().unwrap();
+    plain_baseline(tables.path(), 5);
+    for name in ["a", "b", "c"] {
+        write(
+            tables.path(),
+            &format!("src/{name}.rs"),
+            &format!(
+                "pub fn {name}(v: Value) -> u32 {{\n    match v {{\n        Value::Null => 1,\n        Value::Bool => 2,\n        Value::Number => 3,\n    }}\n}}\n"
+            ),
+        );
+    }
+    assert_eq!(sites(&indexed(tables.path())).len(), 1);
+}
+
+#[test]
+fn a_local_type_is_found_across_modules_and_packages_and_typescript_is_never_external() {
+    let tsx = |name: &str| {
+        format!(
+            "export function {name}(kind: Shape) {{\n  switch (kind) {{\n    case Shape.A:\n      return stepA(kind, 1);\n    case Shape.B:\n      return stepB(kind, 2);\n    case Shape.C:\n      return stepC(kind, 3);\n    default:\n      return 0;\n  }}\n}}\n"
+        )
+    };
+    let dir = tempfile::tempdir().unwrap();
+    plain_baseline(dir.path(), 5);
+    for name in ["a", "b", "c"] {
+        write(dir.path(), &format!("web/{name}.tsx"), &tsx(name));
+    }
+    // TypeScript's enums are not symbols, so a missing one proves nothing.
+    assert_eq!(sites(&indexed(dir.path())).len(), 1);
+
+    // An enum inside an inline module is local; a lower-case qualifier is a package.
+    let nested = tempfile::tempdir().unwrap();
+    plain_baseline(nested.path(), 5);
+    write(
+        nested.path(),
+        "src/model.rs",
+        "pub mod model {\n    pub enum Kind {\n        A,\n    }\n}\n",
+    );
+    for name in ["a", "b", "c"] {
+        write(
+            nested.path(),
+            &format!("src/{name}.rs"),
+            &behaviour(name, &KINDS, Some("_ => 0")),
+        );
+        write(
+            nested.path(),
+            &format!("svc/{name}.go"),
+            &format!(
+                "package svc\n\nfunc {name}(k model.Kind) int {{\n\tswitch k {{\n\tcase model.A:\n\t\treturn stepA(k, 1)\n\tcase model.B:\n\t\treturn stepB(k, 2)\n\tcase model.C:\n\t\treturn stepC(k, 3)\n\tdefault:\n\t\treturn 0\n\t}}\n}}\n"
+            ),
+        );
+    }
+    assert_eq!(sites(&indexed(nested.path())).len(), 2);
+}
+
+#[test]
+fn a_generic_qualifier_names_its_type_and_python_modules_prove_nothing() {
+    let generic = [
+        "Kind::<u8>::Circle",
+        "Kind::<u8>::Square",
+        "Kind::<u8>::Line",
+        "Kind::<u8>::Dot",
+    ];
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    for name in ["a", "b", "c"] {
+        write(
+            dir.path(),
+            &format!("src/{name}.rs"),
+            &behaviour(name, &generic, Some("_ => 0")),
+        );
+    }
+    assert_eq!(sites(&indexed(dir.path())).len(), 1);
+
+    // A case named through the crate root may be a local enum's, so it is kept.
+    let rooted = tempfile::tempdir().unwrap();
+    plain_baseline(rooted.path(), 5);
+    for name in ["a", "b", "c"] {
+        write(
+            rooted.path(),
+            &format!("src/{name}.rs"),
+            &behaviour(
+                name,
+                &[
+                    "crate::Circle",
+                    "crate::Square",
+                    "crate::Line",
+                    "crate::Dot",
+                ],
+                Some("_ => 0"),
+            ),
+        );
+    }
+    assert_eq!(sites(&indexed(rooted.path())).len(), 1);
+
+    // A dependency's generic type is still a dependency's.
+    let external = tempfile::tempdir().unwrap();
+    plain_baseline(external.path(), 5);
+    for name in ["a", "b", "c"] {
+        write(
+            external.path(),
+            &format!("src/{name}.rs"),
+            &behaviour(name, &generic, Some("_ => 0")),
+        );
+    }
+    assert!(sites(&indexed(external.path())).is_empty());
+
+    // `kinds` is a module, which the index has no symbol for.
+    let python = tempfile::tempdir().unwrap();
+    plain_baseline(python.path(), 5);
+    for name in ["a", "b", "c"] {
+        write(
+            python.path(),
+            &format!("src/{name}.py"),
+            &format!(
+                "def {name}(k):\n    if k == kinds.A:\n        return step_a(k, 1)\n    elif k == kinds.B:\n        return step_b(k, 2)\n    elif k == kinds.C:\n        return step_c(k, 3)\n    else:\n        return 0\n"
+            ),
+        );
+    }
+    assert_eq!(sites(&indexed(python.path())).len(), 1);
+}
+
+#[test]
+fn a_binding_before_a_local_path_does_not_make_the_type_external() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    for name in ["a", "b", "c"] {
+        write(
+            dir.path(),
+            &format!("src/{name}.rs"),
+            &behaviour(
+                name,
+                &[
+                    "v @ Kind::Circle",
+                    "v @ Kind::Square",
+                    "v @ Kind::Line",
+                    "v @ Kind::Dot",
+                ],
+                Some("_ => 0"),
+            ),
+        );
+    }
+    assert_eq!(sites(&indexed(dir.path())).len(), 1);
 }

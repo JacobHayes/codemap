@@ -7,6 +7,7 @@ use crate::javascript::{
 
 pub static TYPESCRIPT: Language = Language {
     name: "typescript",
+    type_scope: None,
     extensions: &["ts", "mts", "cts"],
     grammar: || tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
     kinds: KINDS,
@@ -40,6 +41,7 @@ pub static TYPESCRIPT: Language = Language {
 
 pub static TSX: Language = Language {
     name: "tsx",
+    type_scope: None,
     extensions: &["tsx"],
     grammar: || tree_sitter_typescript::LANGUAGE_TSX.into(),
     ..TYPESCRIPT

@@ -98,6 +98,8 @@ pub struct SwitchFact {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileFacts {
     pub language: Option<&'static str>,
+    /// See [`codemap_lang::Language::type_scope`].
+    pub type_scope: Option<&'static str>,
     pub role: Role,
     pub size_bytes: u64,
     /// Binary files keep a size and no lines.
@@ -121,6 +123,7 @@ pub fn extract(path: &str, bytes: &[u8]) -> FileFacts {
         _ => {
             return FileFacts {
                 language: None,
+                type_scope: None,
                 role: role::role_for_path(path, None, ""),
                 size_bytes,
                 binary: true,
@@ -135,6 +138,7 @@ pub fn extract(path: &str, bytes: &[u8]) -> FileFacts {
     let file_role = role::role_for_path(path, language, text);
     let mut facts = FileFacts {
         language: language.map(|language| language.name),
+        type_scope: language.and_then(|language| language.type_scope),
         role: file_role,
         size_bytes,
         binary: false,
