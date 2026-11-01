@@ -69,7 +69,7 @@ your session.
    leave generated and vendored lines out and say how many; `--include-generated` counts them.
 3. Read the evidence with your own tools; a duplication finding lists every copy, so open each
    and compare. Ask: is this mass needed? Is the same idea built
-   twice? Are there layers that only pass through? Is the handling or testing out of
+   twice? Are there wrappers or chains that only pass through? Is the handling or testing out of
    proportion to what it protects?
 4. Decide. Either propose a concrete simplification, or, if the complexity is essential, tell
    the user and (with their agreement) add an `[[acknowledge]]` entry.

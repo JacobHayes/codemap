@@ -1,4 +1,4 @@
-//! The indirection detector fires on wrappers, chains, layers and abstractions with one
+//! The indirection detector fires on wrappers, chains and abstractions with one
 //! implementation, and stays quiet on functions that do something and on tests.
 
 use crate::common::{baseline, findings_of, indexed, write};
@@ -144,42 +144,6 @@ fn wrappers_in_tests_and_methods_a_trait_demands_are_left_alone() {
     );
     let index = indexed(dir.path());
     assert!(signal(&index, "pass_through").is_empty());
-}
-
-#[test]
-fn a_directory_of_mostly_wrappers_is_a_thin_layer() {
-    let dir = tempfile::tempdir().unwrap();
-    baseline(dir.path(), 5);
-    write(dir.path(), "src/worker.rs", &(0..5).map(|i| format!("pub fn work{i}(x: u32) -> u32 {{\n    let a = x + {i};\n    let b = a * 2;\n    b - x\n}}\n\n")).collect::<String>());
-    let facade: String = (0..5)
-        .map(|i| format!("pub fn do{i}(x: u32) -> u32 {{\n    work{i}(x)\n}}\n\n"))
-        .collect();
-    write(dir.path(), "src/facade/api.rs", &facade);
-    let index = indexed(dir.path());
-    let layers = signal(&index, "thin_layer");
-    assert_eq!(layers.len(), 1);
-    assert_eq!(layers[0].subject, "src/facade");
-    assert_eq!(layers[0].measures["wrappers"], 5.0);
-    assert_eq!(layers[0].measures["share"], 1.0);
-}
-
-#[test]
-fn a_directory_where_wrappers_are_a_minority_is_not_a_layer() {
-    let dir = tempfile::tempdir().unwrap();
-    baseline(dir.path(), 5);
-    write(dir.path(), "src/worker.rs", WORKER);
-    let mixed: String = (0..6)
-        .map(|i| {
-            if i < 2 {
-                format!("pub fn w{i}(path: &str) -> String {{\n    load_config(path)\n}}\n\n")
-            } else {
-                format!("pub fn real{i}(x: u32) -> u32 {{\n    let a = x + {i};\n    let b = a * 2;\n    b - x\n}}\n\n")
-            }
-        })
-        .collect();
-    write(dir.path(), "src/mixed/api.rs", &mixed);
-    let index = indexed(dir.path());
-    assert!(signal(&index, "thin_layer").is_empty());
 }
 
 fn implementation(kind: &str) -> Vec<(&'static str, String)> {

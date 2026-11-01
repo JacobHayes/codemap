@@ -1,6 +1,6 @@
 //! Indirection: code that stands between a caller and the work.
 //!
-//! Three signals, each over production code outside generated and vendored files (tests are not
+//! Two signals, each over production code outside generated and vendored files (tests are not
 //! flagged):
 //!
 //! - **Pass-through wrappers.** A function of at most [`WRAPPER_LINES_MAX`] lines whose body is
@@ -15,8 +15,6 @@
 //!   one production type implements or extends (a blanket implementation, whose implementor is a
 //!   generic parameter, counts as many). An abstraction whose name also resolves to
 //!   others with low confidence is skipped, because its implementors cannot be counted.
-//! - **Thin layers.** A directory with at least [`LAYER_FUNCTIONS_MIN`] functions of which
-//!   [`LAYER_WRAPPERS_MIN`] or more, and at least [`LAYER_SHARE_MIN`] of all, are wrappers.
 //!
 //! A finding that spans files is a finding in each of them, listing every part as evidence, so
 //! each file's area can agree with other detectors.
@@ -25,8 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use codemap_lang::Role;
 
-use super::corpus::ancestors;
-use super::{Context, Detector, Finding, SubjectKind, count, is_ranked, percent};
+use super::{Context, Detector, Finding, SubjectKind, count, is_ranked};
 use crate::link::{Edge, IMPLEMENTATION, edges};
 use crate::reader::{Index, QueryError, SymbolRow};
 
@@ -38,13 +35,6 @@ const WRAPPER_LINES_MAX: u32 = 10;
 const TARGET_CONFIDENCE_MIN: f64 = 0.4;
 /// An implementor edge below this confidence may belong to another abstraction of the same name.
 const IMPLEMENTOR_CONFIDENCE_MIN: f64 = 0.5;
-/// A directory is a layer only with enough functions to have a character of its own ...
-const LAYER_FUNCTIONS_MIN: usize = 4;
-const LAYER_WRAPPERS_MIN: usize = 3;
-/// ... and when most of them only pass calls on.
-const LAYER_SHARE_MIN: f64 = 0.6;
-/// Parts of one finding that are listed as evidence.
-const EVIDENCE_MAX: usize = 20;
 /// Names quoted in a reason.
 const NAMES_IN_REASON_MAX: usize = 4;
 
@@ -56,14 +46,13 @@ impl Detector for Indirection {
     }
 
     fn describe(&self) -> &'static str {
-        "Functions that only pass calls on, abstractions with one implementation, and layers made of them"
+        "Functions that only pass calls on, and abstractions with one implementation"
     }
 
     fn detect(&self, context: &Context) -> Result<Vec<Finding>, QueryError> {
         let population = Population::load(context.index)?;
         let wrappers = population.wrappers();
         let mut findings = chain_findings(&population, &wrappers);
-        findings.extend(layer_findings(&population, &wrappers));
         findings.extend(abstraction_findings(&population));
         Ok(findings)
     }
@@ -321,58 +310,6 @@ fn chain_findings_of(chain: &Chain) -> Vec<Finding> {
             finding
         })
         .collect()
-}
-
-fn layer_findings(population: &Population, wrappers: &Wrappers) -> Vec<Finding> {
-    let mut by_dir: BTreeMap<&str, (Vec<&SymbolRow>, Vec<&SymbolRow>)> = BTreeMap::new();
-    for function in population.functions() {
-        let dir = ancestors(&function.path).last().unwrap_or("");
-        let entry = by_dir.entry(dir).or_default();
-        entry.0.push(function);
-        if wrappers.contains_key(function.id.as_str()) {
-            entry.1.push(function);
-        }
-    }
-    by_dir
-        .into_iter()
-        .filter(|(dir, _)| !dir.is_empty())
-        .filter_map(|(dir, (all, passing))| {
-            #[expect(clippy::cast_precision_loss, reason = "function counts")]
-            let share = passing.len() as f64 / all.len() as f64;
-            (all.len() >= LAYER_FUNCTIONS_MIN
-                && passing.len() >= LAYER_WRAPPERS_MIN
-                && share >= LAYER_SHARE_MIN)
-                .then(|| layer_finding(dir, &all, &passing, share))
-        })
-        .collect()
-}
-
-fn layer_finding(dir: &str, all: &[&SymbolRow], passing: &[&SymbolRow], share: f64) -> Finding {
-    let wrapper_lines: u32 = passing.iter().map(|symbol| lines(symbol)).sum();
-    let mut finding = Finding::new(
-        "indirection",
-        SubjectKind::Directory,
-        dir,
-        format!(
-            "{} of the {} functions in this directory only pass calls on.",
-            passing.len(),
-            all.len()
-        ),
-        f64::from(wrapper_lines),
-        1.0,
-    )
-    .measure("functions", number(all.len()))
-    .measure("wrappers", number(passing.len()))
-    .measure("share", share)
-    .measure("wrapperLines", f64::from(wrapper_lines))
-    .fact(format!("{} of functions are pass-throughs", percent(share)));
-    finding
-        .labels
-        .insert("signal".to_owned(), "thin_layer".to_owned());
-    for symbol in passing.iter().take(EVIDENCE_MAX) {
-        finding = finding.evidence(&symbol.path, &[(symbol.start_line, symbol.end_line)]);
-    }
-    finding
 }
 
 fn abstraction_findings(population: &Population) -> Vec<Finding> {
