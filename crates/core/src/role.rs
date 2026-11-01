@@ -9,6 +9,13 @@ const VENDORED_DIRS: &[&str] = &[
     "third-party",
     "node_modules",
 ];
+/// Build output committed in source, and test snapshots.
+const GENERATED_DIRS: &[&str] = &["dist", "__snapshots__"];
+/// Lock files, test snapshots and golden files (written by tools, compared by tests), and
+/// source maps.
+const GENERATED_EXTENSIONS: &[&str] = &["lock", "snap", "golden", "map"];
+/// Minified bundles.
+const GENERATED_SUFFIXES: &[&str] = &[".min.js", ".min.css", ".min.mjs"];
 const TEST_DIRS: &[&str] = &[
     "tests",
     "test",
@@ -17,7 +24,6 @@ const TEST_DIRS: &[&str] = &[
     "specs",
     "fixtures",
     "testdata",
-    "__snapshots__",
     "e2e",
 ];
 const BENCH_DIRS: &[&str] = &["benches", "bench", "benchmarks"];
@@ -65,7 +71,14 @@ pub fn role_for_path(path: &str, language: Option<&Language>, text: &str) -> Rol
 
     if in_dir(VENDORED_DIRS) {
         Role::Vendored
-    } else if extension == "lock" || LOCK_FILES.contains(&file) || has_generated_marker(text) {
+    } else if in_dir(GENERATED_DIRS)
+        || GENERATED_EXTENSIONS.contains(&extension)
+        || GENERATED_SUFFIXES
+            .iter()
+            .any(|suffix| file.to_ascii_lowercase().ends_with(suffix))
+        || LOCK_FILES.contains(&file)
+        || has_generated_marker(text)
+    {
         Role::Generated
     } else if in_dir(TEST_DIRS) || is_test_file(file, stem, language) {
         Role::Test
@@ -82,6 +95,16 @@ pub fn role_for_path(path: &str, language: Option<&Language>, text: &str) -> Rol
     } else {
         Role::Prod
     }
+}
+
+/// A file that only declares types for code written elsewhere (`.d.ts`, `.pyi`): its comments
+/// are its documentation, not commentary on logic.
+#[must_use]
+pub fn is_declaration_file(path: &str) -> bool {
+    let path = path.to_ascii_lowercase();
+    [".d.ts", ".d.mts", ".d.cts", ".pyi"]
+        .iter()
+        .any(|suffix| path.ends_with(suffix))
 }
 
 fn is_test_file(file: &str, stem: &str, language: Option<&Language>) -> bool {

@@ -169,6 +169,24 @@ fn paths_decide_roles_and_content_can_mark_generated() {
 }
 
 #[test]
+fn snapshots_bundles_and_build_output_are_generated_and_vendored_dirs_vendored() {
+    let role = |path: &str| codemap_core::role_for_path(path, None, "").as_str();
+    for path in [
+        "tests/__snapshots__/app.test.ts.snap",
+        "src/render/app.snap",
+        "web/static/app.min.js",
+        "packages/ui/dist/index.js",
+        "testdata/out.golden",
+    ] {
+        assert_eq!(role(path), "generated", "{path}");
+    }
+    for path in ["third_party/lib/a.js", "web/node_modules/x/index.js"] {
+        assert_eq!(role(path), "vendored", "{path}");
+    }
+    assert_eq!(role("tests/unit/app.test.ts"), "test");
+}
+
+#[test]
 fn other_text_files_get_lines_and_tokens_and_binary_files_only_a_size() {
     let tree = tree_of("text");
     std::fs::write(tree.path().join("blob.bin"), [0_u8, 1, 2, 255]).unwrap();
