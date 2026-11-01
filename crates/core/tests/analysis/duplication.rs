@@ -194,15 +194,27 @@ fn copies_in_test_code_use_the_same_engine_and_are_labelled_tests() {
 }
 
 #[test]
-fn a_small_group_is_paired_but_does_not_become_an_area() {
+fn a_small_near_group_is_paired_but_does_not_become_an_area() {
     let dir = tempfile::tempdir().unwrap();
     baseline(dir.path(), 20);
-    // Two copies of a nine-line function duplicate fewer lines than an area is worth.
+    // Two near copies of a nine-line function duplicate fewer lines than an area is worth.
     write(dir.path(), "a.rs", &total("one", "items", "sum", "1.5"));
-    write(dir.path(), "b.rs", &total("two", "items", "sum", "1.5"));
+    write(dir.path(), "b.rs", &total("two", "rows", "acc", "2.0"));
     let index = indexed(dir.path());
     assert!(all_duplication(&index).is_empty());
     assert_eq!(crate::similarity::pair_count(dir.path()), 1);
+}
+
+#[test]
+fn a_small_exact_pair_is_an_area() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 20);
+    write(dir.path(), "a.rs", &total("total", "items", "sum", "1.5"));
+    write(dir.path(), "b.rs", &total("total", "items", "sum", "1.5"));
+    let index = indexed(dir.path());
+    let found = all_duplication(&index);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].labels["match"], "exact");
 }
 
 #[test]

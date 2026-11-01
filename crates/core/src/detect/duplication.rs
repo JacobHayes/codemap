@@ -18,6 +18,11 @@ use crate::similarity::{Group, Member, groups};
 /// a look. It keeps a pair of dozen-line test bodies and drops the helper-sized look-alikes.
 pub(crate) const DUPLICATED_LINES_MIN: u32 = 12;
 
+/// The same bar for a group whose copies are all identical (apart from whitespace and comments).
+/// An exact pair is a copy nobody had to notice was changed, so even a short one is worth a
+/// glance; near copies of that size are mostly functions that share a shape.
+pub(crate) const EXACT_DUPLICATED_LINES_MIN: u32 = 6;
+
 pub struct Duplication;
 
 impl Detector for Duplication {
@@ -32,7 +37,14 @@ impl Detector for Duplication {
     fn detect(&self, context: &Context) -> Result<Vec<Finding>, QueryError> {
         Ok(groups(context.index)?
             .iter()
-            .filter(|group| group.lines_duplicated() >= DUPLICATED_LINES_MIN)
+            .filter(|group| {
+                let floor = if group.exact {
+                    EXACT_DUPLICATED_LINES_MIN
+                } else {
+                    DUPLICATED_LINES_MIN
+                };
+                group.lines_duplicated() >= floor
+            })
             .map(finding_of)
             .collect())
     }
