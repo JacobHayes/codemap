@@ -91,7 +91,7 @@ function Detail({ subject, state, navigate }: { subject: string } & Common) {
       </ul>
       {detail.groups.length > 0 && (
         <>
-          <h3>Groups this belongs to</h3>
+          <h2>Groups this belongs to</h2>
           <ul className="related">
             {detail.groups.map((share) => (
               <li key={share.group.subject}>
@@ -106,7 +106,7 @@ function Detail({ subject, state, navigate }: { subject: string } & Common) {
       )}
       {detail.related.length > 0 && (
         <>
-          <h3>{detail.area?.subjectKind === 'group' ? 'Areas of its files' : 'Nearby areas'}</h3>
+          <h2>{detail.area?.subjectKind === 'group' ? 'Areas of its files' : 'Nearby areas'}</h2>
           <ul className="related mono">
             {detail.related.map((area) => (
               <li key={area.subject}>
