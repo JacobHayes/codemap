@@ -48,6 +48,7 @@ pub static PYTHON: Language = Language {
     assertion_prefixes: &["assert"],
     test_stem_prefixes: &["test_"],
     test_stem_suffixes: &["_test"],
+    generated_header: None,
     mark,
 };
 

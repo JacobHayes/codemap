@@ -31,6 +31,7 @@ pub static TYPESCRIPT: Language = Language {
     assertion_prefixes: ASSERTION_PREFIXES,
     test_stem_prefixes: &[],
     test_stem_suffixes: &[],
+    generated_header: None,
     mark,
 };
 

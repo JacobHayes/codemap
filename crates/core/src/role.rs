@@ -73,8 +73,8 @@ const GENERATED_MARKERS: &[&str] = &[
 /// Generators put their marker in the header; later lines are the file's own.
 const GENERATED_HEAD_LINES: usize = 5;
 
-/// How far into a file the Go generated-code header is looked for.
-const GO_HEADER_LINES_MAX: usize = 100;
+/// How far into a file a language's generated-code header is looked for.
+const GENERATED_HEADER_LINES_MAX: usize = 100;
 
 /// The role a file has by where it lives and what its first lines say.
 #[must_use]
@@ -98,7 +98,7 @@ pub fn role_for_path(path: &str, language: Option<&Language>, text: &str) -> Rol
             .any(|suffix| file.to_ascii_lowercase().ends_with(suffix))
         || LOCK_FILES.contains(&file)
         || has_generated_marker(text)
-        || (language.is_some_and(|language| language.name == "go") && has_go_generated_header(text))
+        || language.is_some_and(|language| has_generated_header(language, text))
     {
         Role::Generated
     } else if in_dir(TEST_DIRS) || is_test_file(file, stem, language) {
@@ -145,16 +145,19 @@ fn is_test_file(file: &str, stem: &str, language: Option<&Language>) -> bool {
         || file.contains(".spec.")
 }
 
-/// Go's convention for generated files: a line `// Code generated ... DO NOT EDIT.` anywhere
-/// before the package clause (looked for in Go files only: other languages may carry such a line
-/// inside a string), often below a licence header too long for the marker window.
-fn has_go_generated_header(text: &str) -> bool {
-    text.lines()
-        .take(GO_HEADER_LINES_MAX)
-        .take_while(|line| !line.starts_with("package "))
-        .any(|line| {
-            line.starts_with("// Code generated ") && line.trim_end().ends_with("DO NOT EDIT.")
-        })
+/// A language's own generated-file line, anywhere before its header ends, often below a licence
+/// header too long for the marker window. Only that language's files are searched: others may
+/// carry such a line inside a string.
+fn has_generated_header(language: &Language, text: &str) -> bool {
+    language.generated_header.as_ref().is_some_and(|header| {
+        text.lines()
+            .take(GENERATED_HEADER_LINES_MAX)
+            .take_while(|line| !line.starts_with(header.ends_before))
+            .any(|line| {
+                line.starts_with(header.line_prefix)
+                    && line.trim_end().ends_with(header.line_suffix)
+            })
+    })
 }
 
 fn has_generated_marker(text: &str) -> bool {

@@ -1,6 +1,6 @@
 //! Go: the table and its exceptions (test functions, interfaces, `if err != nil`).
 
-use crate::{Concern, Kind, Language, Mark, Node};
+use crate::{Concern, GeneratedHeader, Kind, Language, Mark, Node};
 
 /// A method continues the type it is declared on, whichever file or order: the receiver's type
 /// name is the extension's name, with pointers and type arguments stripped.
@@ -54,6 +54,12 @@ pub static GO: Language = Language {
     assertion_prefixes: &["Assert", "Require", "assert", "require"],
     test_stem_prefixes: &[],
     test_stem_suffixes: &["_test"],
+    // Generators put this line above the package clause, below any licence header.
+    generated_header: Some(GeneratedHeader {
+        line_prefix: "// Code generated ",
+        line_suffix: "DO NOT EDIT.",
+        ends_before: "package ",
+    }),
     mark,
 };
 

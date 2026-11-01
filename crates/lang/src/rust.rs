@@ -43,6 +43,7 @@ pub static RUST: Language = Language {
     assertion_prefixes: &["assert", "debug_assert"],
     test_stem_prefixes: &[],
     test_stem_suffixes: &["_test", "_tests"],
+    generated_header: None,
     mark,
 };
 
