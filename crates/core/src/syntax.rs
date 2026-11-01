@@ -298,8 +298,13 @@ fn symbols_and_refs(
                     .node
                     .utf8_text(source)
                     .ok()
-                    .map(|text| (text, capture.node));
-            } else {
+                    // A test's name is its string literal, without the quotes.
+                    .map(|text| match capture.node.kind() {
+                        "string" => (text.trim_matches(['"', '\'']), capture.node),
+                        _ => (text, capture.node),
+                    });
+            } else if !capture_name.starts_with('_') {
+                // Captures named `_x` only feed predicates.
                 tag = Some((capture_name, capture.node));
             }
         }
@@ -377,7 +382,8 @@ fn definition_kind(
 ) -> Option<SymbolKind> {
     match tag.strip_prefix("definition.")? {
         "class" | "interface" => Some(SymbolKind::Type),
-        "module" => Some(SymbolKind::Module),
+        "module" | "group" => Some(SymbolKind::Module),
+        "test" => Some(SymbolKind::Test),
         "function" | "method" => {
             let is_test = (language.mark)(node, source) == Some(Mark::TestFunction);
             Some(if is_test {

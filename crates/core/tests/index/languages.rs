@@ -311,3 +311,29 @@ fn javascript_lines_carry_role_and_concern() {
         ]
     );
 }
+
+#[test]
+fn test_runner_calls_are_test_symbols_and_suites_are_groups() {
+    let tree = tree_of("javascript");
+    index(tree.path()).unwrap();
+    let found: Vec<_> = symbols(tree.path(), "suite.test.js")
+        .into_iter()
+        .map(|(name, kind, parent, ..)| (name, kind, parent))
+        .collect();
+    let entry = |name: &str, kind: &str, parent: Option<&str>| {
+        (name.to_owned(), kind.to_owned(), parent.map(str::to_owned))
+    };
+    assert_eq!(
+        found,
+        vec![
+            entry("box", "module", None),
+            entry("opens", "test", Some("box")),
+            entry("closes", "test", Some("box")),
+            entry("sizes %i", "module", Some("box")),
+            entry("fits", "test", Some("sizes %i")),
+            entry("doubles %i", "test", None),
+            entry("flows", "module", None),
+            entry("doesn't break", "test", Some("flows")),
+        ]
+    );
+}

@@ -1,7 +1,7 @@
 //! TypeScript and TSX: the JavaScript table plus the grammars' own tags query.
 
 use crate::Language;
-use crate::javascript::{ASSERTION_PREFIXES, CASE_LABEL_FIELDS, KINDS, LOGGING_CALLEES, mark};
+use crate::javascript::{ASSERTION_PREFIXES, CASE_LABEL_FIELDS, KINDS, LOGGING_CALLEES, TEST_TAGS_QUERIES, mark};
 
 pub static TYPESCRIPT: Language = Language {
     name: "typescript",
@@ -18,6 +18,9 @@ pub static TYPESCRIPT: Language = Language {
         (class_declaration (class_heritage (extends_clause value: (identifier) @name))) @reference.implementation
         (abstract_class_declaration (class_heritage (implements_clause [(type_identifier) @name (generic_type name: (type_identifier) @name)]))) @reference.implementation
         (abstract_class_declaration (class_heritage (extends_clause value: (identifier) @name))) @reference.implementation",
+        TEST_TAGS_QUERIES[0],
+        TEST_TAGS_QUERIES[1],
+        TEST_TAGS_QUERIES[2],
     ],
     case_label_fields: CASE_LABEL_FIELDS,
     callee_fields: &["function"],

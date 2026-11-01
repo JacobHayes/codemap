@@ -58,6 +58,34 @@ pub(crate) const ASSERTION_PREFIXES: &[&str] = &[
     "deepStrictEqual",
 ];
 
+/// Test runners (vitest, jest, mocha) declare tests as calls: `it("name", () => ..)`,
+/// `test.only(..)` and `it.each(table)("name", ..)`. A suite is a group, a case a test, named
+/// by its string (Playwright's `test.describe` is a suite too).
+pub(crate) const TEST_TAGS_QUERIES: &[&str] = &[
+    r#"(call_expression
+        function: [
+          (identifier) @_runner
+          (member_expression object: (identifier) @_runner property: (property_identifier) @_modifier)
+          (call_expression function: (member_expression object: (identifier) @_runner property: (property_identifier) @_modifier))
+        ]
+        arguments: (arguments . (string) @name . [(arrow_function) (function_expression)])
+        (#match? @_runner "^(it|test)$")
+        (#not-match? @_modifier "^(describe|suite)$")) @definition.test"#,
+    r#"(call_expression
+        function: [
+          (identifier) @_runner
+          (member_expression object: (identifier) @_runner property: (property_identifier) @_modifier)
+          (call_expression function: (member_expression object: (identifier) @_runner property: (property_identifier) @_modifier))
+        ]
+        arguments: (arguments . (string) @name . [(arrow_function) (function_expression)])
+        (#match? @_runner "^(describe|suite)$")) @definition.group"#,
+    r#"(call_expression
+        function: (member_expression object: (identifier) @_runner property: (property_identifier) @_modifier)
+        arguments: (arguments . (string) @name . [(arrow_function) (function_expression)])
+        (#eq? @_runner "test")
+        (#match? @_modifier "^(describe|suite)$")) @definition.group"#,
+];
+
 pub static JAVASCRIPT: Language = Language {
     name: "javascript",
     extensions: &["js", "jsx", "mjs", "cjs"],
@@ -66,6 +94,9 @@ pub static JAVASCRIPT: Language = Language {
     tags_query: tree_sitter_javascript::TAGS_QUERY,
     extra_tags_queries: &[
         "(class_declaration (class_heritage (identifier) @name)) @reference.implementation",
+        TEST_TAGS_QUERIES[0],
+        TEST_TAGS_QUERIES[1],
+        TEST_TAGS_QUERIES[2],
     ],
     case_label_fields: CASE_LABEL_FIELDS,
     callee_fields: &["function"],
