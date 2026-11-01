@@ -235,7 +235,8 @@ Detectors compare the codebase with itself by default, and a subject with its pe
 against the files, a directory against the directories, a function against the functions. "Unusual"
 means a robust outlier (median and median absolute deviation) in that distribution, never a
 distance from a codebase-wide total, which one large test folder or generated schema would drag
-for everyone. Two project inputs adjust this:
+for everyone. Files too small to say anything about size (fixtures, stubs) are left out of the size and
+concentration peer distributions; they still count toward mass everywhere else. Two project inputs adjust this:
 
 - **Rules** set a threshold on one measure at one granularity ("handling lines per function at
   least 100"). Rules are one generic detector driven by configuration.

@@ -13,6 +13,10 @@
 //! against peers of the same kind, production or test, since a suite of small fixtures says
 //! nothing about how big source files should be.
 //!
+//! Files under [`PEER_FILE_LINES_MIN`] lines are not peers: they are left out of the typical file
+//! size and of every directory's mean file size, though they are still judged by those and count
+//! toward mass everywhere else.
+//!
 //! A file or function is ranked by its excess over the peer median, as a directory is, so a
 //! large place does not outrank every pattern for its size alone.
 //!
@@ -29,7 +33,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use codemap_lang::Role;
 
 use super::corpus::{Agg, FunctionStat, ancestors};
-use super::robust::modified_z;
+use super::robust::modified_z_against;
 use super::{Context, Detector, Finding, SubjectKind, count};
 use crate::reader::QueryError;
 
@@ -38,6 +42,11 @@ const OUTLIER_Z: f64 = 3.5;
 const MAD_FLOOR: f64 = 0.05;
 const FILES_SAMPLE_MIN: usize = 20;
 const FUNCTIONS_SAMPLE_MIN: usize = 30;
+/// Files with fewer lines than this are left out of the peer distributions (typical file size,
+/// directory mean file size): fixtures, re-export stubs and empty modules say nothing about how
+/// big a source file is, and a test folder of five-line fixtures pulled its peers' typical file
+/// down to five lines. They still count toward mass everywhere else.
+const PEER_FILE_LINES_MIN: f64 = 5.0;
 const FILE_LINES_MIN: f64 = 150.0;
 const FILE_TOKENS_MIN: f64 = 1500.0;
 const FUNCTION_LINES_MIN: f64 = 60.0;
@@ -61,13 +70,16 @@ fn whole_lines(lines: f64) -> u32 {
     lines as u32
 }
 
-/// Robust z-scores on a log scale; empty when the sample is too small.
-fn robust_z(values: &[f64], sample_min: usize) -> (Vec<f64>, f64) {
-    if values.len() < sample_min {
+/// Robust z-scores of `values` on a log scale against the distribution of `peers`; empty when
+/// the sample is too small.
+fn robust_z(peers: &[f64], values: &[f64], sample_min: usize) -> (Vec<f64>, f64) {
+    if peers.len() < sample_min {
         return (Vec::new(), 0.0);
     }
-    let logs: Vec<f64> = values.iter().map(|v| v.max(1.0).log10()).collect();
-    let (scores, centre) = modified_z(&logs, MAD_FLOOR);
+    let log = |v: &f64| v.max(1.0).log10();
+    let peers: Vec<f64> = peers.iter().map(log).collect();
+    let values: Vec<f64> = values.iter().map(log).collect();
+    let (scores, centre) = modified_z_against(&peers, &values, MAD_FLOOR);
     (scores, 10_f64.powf(centre))
 }
 
@@ -82,6 +94,17 @@ fn population_word(role: Role) -> &'static str {
 struct Sized {
     lines: f64,
     tokens: f64,
+    /// Whether the size is part of the distribution the others are judged against.
+    peer: bool,
+}
+
+/// The lines and tokens of the sizes that are peers.
+fn peer_sizes(sizes: &[Sized]) -> (Vec<f64>, Vec<f64>) {
+    sizes
+        .iter()
+        .filter(|s| s.peer)
+        .map(|s| (s.lines, s.tokens))
+        .unzip()
 }
 
 /// Indexes of the outliers among `sizes`, with each one's z-scores for lines and tokens.
@@ -93,8 +116,9 @@ fn outliers(
 ) -> Vec<(usize, f64, f64)> {
     let lines: Vec<f64> = sizes.iter().map(|s| s.lines).collect();
     let tokens: Vec<f64> = sizes.iter().map(|s| s.tokens).collect();
-    let (z_lines, _) = robust_z(&lines, sample_min);
-    let (z_tokens, _) = robust_z(&tokens, sample_min);
+    let (peer_lines, peer_tokens) = peer_sizes(sizes);
+    let (z_lines, _) = robust_z(&peer_lines, &lines, sample_min);
+    let (z_tokens, _) = robust_z(&peer_tokens, &tokens, sample_min);
     (0..sizes.len())
         .filter_map(|i| {
             let (zl, zt) = (*z_lines.get(i)?, *z_tokens.get(i)?);
@@ -129,6 +153,11 @@ fn code_files<'a>(context: &'a Context) -> impl Iterator<Item = (&'a String, &'a
     })
 }
 
+/// Whether a file is part of the peer distributions, as opposed to only being judged by them.
+fn is_peer(agg: &Agg) -> bool {
+    agg.lines >= PEER_FILE_LINES_MIN
+}
+
 /// Production and test code are sized separately: a test suite is not a peer of the code it tests.
 const STRATA: [Role; 2] = [Role::Prod, Role::Test];
 
@@ -160,12 +189,11 @@ fn files_of(context: &Context, role: Role) -> Vec<Finding> {
         .map(|(_, agg)| Sized {
             lines: agg.lines,
             tokens: agg.tokens,
+            peer: is_peer(agg),
         })
         .collect();
-    let (_, median_lines) = robust_z(
-        &sizes.iter().map(|s| s.lines).collect::<Vec<_>>(),
-        FILES_SAMPLE_MIN,
-    );
+    let (peer_lines, _) = peer_sizes(&sizes);
+    let (_, median_lines) = robust_z(&peer_lines, &peer_lines, FILES_SAMPLE_MIN);
     let mut findings = Vec::new();
     for (i, z_lines, z_tokens) in
         outliers(&sizes, FILES_SAMPLE_MIN, FILE_LINES_MIN, FILE_TOKENS_MIN)
@@ -217,12 +245,11 @@ fn functions(context: &Context) -> Vec<Finding> {
         .map(|f| Sized {
             lines: f.lines,
             tokens: f.tokens,
+            peer: true,
         })
         .collect();
-    let (_, median_lines) = robust_z(
-        &sizes.iter().map(|s| s.lines).collect::<Vec<_>>(),
-        FUNCTIONS_SAMPLE_MIN,
-    );
+    let (peer_lines, _) = peer_sizes(&sizes);
+    let (_, median_lines) = robust_z(&peer_lines, &peer_lines, FUNCTIONS_SAMPLE_MIN);
     let mut findings = Vec::new();
     for (i, z_lines, z_tokens) in outliers(
         &sizes,
@@ -276,6 +303,10 @@ fn functions(context: &Context) -> Vec<Finding> {
 struct Mass<'a> {
     files: f64,
     lines: f64,
+    /// The files among them that are peers, and their lines: what the directory's mean file size
+    /// is judged on.
+    peer_files: f64,
+    peer_lines: f64,
     /// The directory's biggest file and its lines.
     largest_path: &'a str,
     largest: f64,
@@ -292,6 +323,10 @@ fn concentrations(context: &Context) -> Vec<Finding> {
             let mass = dirs.entry(dir).or_default();
             mass.files += 1.0;
             mass.lines += agg.lines;
+            if is_peer(agg) {
+                mass.peer_files += 1.0;
+                mass.peer_lines += agg.lines;
+            }
             mass.test_lines += agg.role(Role::Test);
             if agg.lines > mass.largest {
                 mass.largest = agg.lines;
@@ -305,17 +340,17 @@ fn concentrations(context: &Context) -> Vec<Finding> {
         let peers: Vec<_> = dirs
             .iter()
             .filter(|(_, mass)| {
-                mass.files >= CONCENTRATION_FILES_MIN
+                mass.peer_files >= CONCENTRATION_FILES_MIN
                     && stratum(mass.lines - mass.test_lines, mass.test_lines) == role
             })
             .collect();
         let means: Vec<f64> = peers
             .iter()
-            .map(|(_, mass)| mass.lines / mass.files)
+            .map(|(_, mass)| mass.peer_lines / mass.peer_files)
             .collect();
-        let (scores, typical) = robust_z(&means, DIRECTORIES_SAMPLE_MIN);
+        let (scores, typical) = robust_z(&means, &means, DIRECTORIES_SAMPLE_MIN);
         for (&(&path, mass), &z) in peers.iter().zip(&scores) {
-            let excess = mass.lines - typical * mass.files;
+            let excess = mass.peer_lines - typical * mass.peer_files;
             if z >= OUTLIER_Z && excess >= floor {
                 hits.push(Hit {
                     path,
@@ -375,13 +410,14 @@ fn concentration(context: &Context, hit: &Hit, all_files: f64) -> Finding {
         excess,
         role,
     } = *hit;
-    let mean = mass.lines / mass.files;
+    let mean = mass.peer_lines / mass.peer_files;
     let reason = format!(
-        "{} holds {} lines in {} files, {} lines a file where {} directories typically hold {}: about {} lines more than usual.",
+        "{} holds {} lines in {} files, {} lines a file among those of {} lines or more, where {} directories typically hold {}: about {} lines more than usual.",
         path,
         count(mass.lines),
         count(mass.files),
         count(mean),
+        count(PEER_FILE_LINES_MIN),
         population_word(role),
         count(typical),
         count(excess),

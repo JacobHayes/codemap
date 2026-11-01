@@ -214,6 +214,43 @@ fn comments_in_type_declaration_files_are_not_judged() {
 }
 
 #[test]
+fn tiny_files_do_not_set_the_typical_file_size() {
+    let typical = |tiny_files: usize| {
+        let dir = tempfile::tempdir().unwrap();
+        baseline(dir.path(), 40);
+        for i in 0..tiny_files {
+            write(dir.path(), &format!("fixtures/f{i}.rs"), "fn f() {}\n");
+        }
+        write(dir.path(), "src/huge.rs", &plain_functions("huge", 400));
+        let index = indexed(dir.path());
+        let found = findings_of(&index, "size");
+        let huge = found.iter().find(|f| f.subject == "src/huge.rs").unwrap();
+        huge.measures["typicalLines"]
+    };
+    assert_eq!(typical(0), typical(200));
+}
+
+#[test]
+fn tiny_files_still_count_in_a_flagged_directorys_totals() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline_dirs(dir.path(), 25);
+    for i in 0..4 {
+        write(
+            dir.path(),
+            &format!("big/huge{i}.rs"),
+            &plain_functions(&format!("huge{i}_"), 150),
+        );
+    }
+    for i in 0..30 {
+        write(dir.path(), &format!("big/tiny{i}.rs"), "fn f() {}\n");
+    }
+    let index = indexed(dir.path());
+    let found = findings_of(&index, "size");
+    let big = found.iter().find(|f| f.subject == "big").unwrap();
+    assert_eq!(big.measures["files"], 34.0);
+}
+
+#[test]
 fn size_stays_quiet_when_files_are_alike() {
     let dir = tempfile::tempdir().unwrap();
     baseline(dir.path(), 40);

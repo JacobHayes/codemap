@@ -17,13 +17,19 @@ pub(crate) fn median(sorted: &[f64]) -> f64 {
 /// deviation is floored at `floor` so a uniform sample does not turn small differences into
 /// outliers. Empty values give an empty answer.
 pub(crate) fn modified_z(values: &[f64], floor: f64) -> (Vec<f64>, f64) {
-    if values.is_empty() {
+    modified_z_against(values, values, floor)
+}
+
+/// The modified z-score of every one of `values` against the median and deviation of `peers`,
+/// and the peers' median. Empty peers give an empty answer.
+pub(crate) fn modified_z_against(peers: &[f64], values: &[f64], floor: f64) -> (Vec<f64>, f64) {
+    if peers.is_empty() {
         return (Vec::new(), 0.0);
     }
-    let mut sorted = values.to_vec();
+    let mut sorted = peers.to_vec();
     sorted.sort_by(f64::total_cmp);
     let centre = median(&sorted);
-    let mut deviations: Vec<f64> = values.iter().map(|v| (v - centre).abs()).collect();
+    let mut deviations: Vec<f64> = peers.iter().map(|v| (v - centre).abs()).collect();
     deviations.sort_by(f64::total_cmp);
     let mad = median(&deviations).max(floor);
     let scores = values
