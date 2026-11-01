@@ -380,3 +380,32 @@ fn same_named_methods_of_different_clusters_are_different_groups() {
     assert_eq!(both.len(), 2);
     assert_eq!(ids.len(), 2);
 }
+
+#[test]
+fn a_closure_copied_with_its_enclosing_function_is_not_a_group_of_its_own() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 20);
+    let source = "export function debounce(fn, wait) {\n  let timer = null;\n  let last = 0;\n  const flush = function () {\n    if (timer === null) {\n      return;\n    }\n    clearTimeout(timer);\n    timer = null;\n    last = Date.now();\n    fn(last);\n  };\n  const ret = function (value) {\n    flush();\n    timer = setTimeout(() => fn(value), wait);\n  };\n  return ret;\n}\n";
+    write(dir.path(), "a/utils.ts", source);
+    write(dir.path(), "b/utils.ts", source);
+    let index = indexed(dir.path());
+
+    let found = all_duplication(&index);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].measures["members"], 2.0);
+    assert_eq!(found[0].measures["largestLines"], 18.0);
+}
+
+#[test]
+fn a_function_sharing_a_line_with_the_one_before_it_is_not_nested_in_it() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 20);
+    let long = "export function longer(a) {\n  let sum = 0;\n  for (const x of a) {\n    if (x > 3) {\n      sum += x * 2;\n    } else {\n      sum -= 1;\n    }\n  }\n  return sum;\n}";
+    let short = "function shorter(items) {\n  const out = [];\n  for (const item of items) {\n    out.push(item.name);\n    out.push(item.id);\n  }\n  return out;\n}\n";
+    for file in ["a/one.ts", "b/two.ts"] {
+        write(dir.path(), file, &format!("{long} {short}"));
+    }
+    let index = indexed(dir.path());
+
+    assert_eq!(all_duplication(&index).len(), 2);
+}

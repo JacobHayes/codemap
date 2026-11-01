@@ -10,6 +10,8 @@
 use super::{
     Context, Detector, Finding, count, distinct_lines_by_path, group_id, percent, places_title,
 };
+use std::collections::BTreeSet;
+
 use crate::reader::QueryError;
 use crate::similarity::{Group, Member, groups};
 
@@ -35,19 +37,77 @@ impl Detector for Duplication {
     }
 
     fn detect(&self, context: &Context) -> Result<Vec<Finding>, QueryError> {
-        Ok(groups(context.index)?
+        let mut kept = groups(context.index)?;
+        kept.retain(|group| {
+            let floor = if group.exact {
+                EXACT_DUPLICATED_LINES_MIN
+            } else {
+                DUPLICATED_LINES_MIN
+            };
+            group.lines_duplicated() >= floor
+        });
+        let enclosers = enclosers(&kept);
+        Ok(kept
             .iter()
-            .filter(|group| {
-                let floor = if group.exact {
-                    EXACT_DUPLICATED_LINES_MIN
-                } else {
-                    DUPLICATED_LINES_MIN
-                };
-                group.lines_duplicated() >= floor
-            })
-            .map(finding_of)
+            .enumerate()
+            .filter(|&(at, _)| !is_nested(&enclosers[at]))
+            .map(|(_, group)| finding_of(group))
             .collect())
     }
+}
+
+/// For every member of every group, the `(group, member)` positions of the members that strictly
+/// enclose it, found by a sweep per file.
+fn enclosers(groups: &[Group]) -> Vec<Vec<Vec<(usize, usize)>>> {
+    let mut found: Vec<Vec<Vec<(usize, usize)>>> = groups
+        .iter()
+        .map(|group| vec![Vec::new(); group.members.len()])
+        .collect();
+    let mut all: Vec<(usize, usize)> = (0..groups.len())
+        .flat_map(|at| (0..groups[at].members.len()).map(move |member| (at, member)))
+        .collect();
+    let member = |(at, k): (usize, usize)| &groups[at].members[k];
+    // File, then outermost first.
+    all.sort_by_key(|&id| {
+        let m = member(id);
+        (m.path.as_str(), m.start_line, std::cmp::Reverse(m.end_line))
+    });
+    let mut open: Vec<(usize, usize)> = Vec::new();
+    for id in all {
+        let m = member(id);
+        // Whatever does not reach the member's end cannot enclose it, nor anything after it.
+        while open
+            .last()
+            .is_some_and(|&top| member(top).path != m.path || member(top).end_line < m.end_line)
+        {
+            open.pop();
+        }
+        found[id.0][id.1] = open
+            .iter()
+            .copied()
+            .filter(|&top| member(top).lines() > m.lines())
+            .collect();
+        open.push(id);
+    }
+    found
+}
+
+/// Whether some other group holds a different member around each member of this one: closures in
+/// a copied function are copied with it, and the outer group already says so.
+fn is_nested(enclosers: &[Vec<(usize, usize)>]) -> bool {
+    let Some(first) = enclosers.first() else {
+        return false;
+    };
+    let outers: BTreeSet<usize> = first.iter().map(|&(at, _)| at).collect();
+    outers.into_iter().any(|outer| {
+        let mut hosts = BTreeSet::new();
+        enclosers.iter().all(|around| {
+            around
+                .iter()
+                .filter(|&&(at, _)| at == outer)
+                .any(|&host| hosts.insert(host))
+        })
+    })
 }
 
 fn reason(group: &Group, noun: &str) -> String {
