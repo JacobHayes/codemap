@@ -4,7 +4,10 @@
 //! Every measure declares its population, the role whose lines the share is of: handling,
 //! comments and logging among production lines, assertions among test lines, test code and
 //! documentation against production lines. A subject with no lines in the population has no
-//! share, so a tests directory is not flagged for being tests.
+//! share, so a tests directory is not flagged for being tests. Comments are judged only among
+//! the lines of files whose comments are commentary: documentation files are another role, so
+//! their prose is not production commentary, and type-declaration files (`.d.ts`, `.pyi`) are
+//! left out of the comment population altogether, because there the comments are the content.
 //!
 //! "Unusual" is judged against the distribution of the same measure across peers, never against
 //! the codebase-wide share, which one big test-only folder or comment-heavy schema would drag for
@@ -50,6 +53,8 @@ struct Category {
     role: Role,
     concern: Option<Concern>,
     population: Role,
+    /// Type-declaration files are outside the population.
+    skips_declarations: bool,
     /// How the lines are called in a sentence.
     words: &'static str,
 }
@@ -59,6 +64,7 @@ const fn concern(concern: Concern, role: Role, words: &'static str) -> Category 
         role,
         concern: Some(concern),
         population: role,
+        skips_declarations: matches!(concern, Concern::Comment),
         words,
     }
 }
@@ -68,6 +74,7 @@ const fn against_prod(role: Role, words: &'static str) -> Category {
         role,
         concern: None,
         population: Role::Prod,
+        skips_declarations: false,
         words,
     }
 }
@@ -87,7 +94,12 @@ impl Category {
         let lines = self
             .concern
             .map_or_else(|| agg.role(self.role), |c| agg.cell(self.role, c));
-        (lines, agg.role(self.population))
+        let of = agg.role(self.population);
+        if self.skips_declarations {
+            (lines - agg.declaration_comment, of - agg.declaration_prod)
+        } else {
+            (lines, of)
+        }
     }
 
     /// What the category's share is of, in a sentence.

@@ -164,6 +164,46 @@ fn every_finding_carries_facts_to_show() {
 }
 
 #[test]
+fn size_measures_only_files_in_a_programming_language() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline_dirs(dir.path(), 25);
+    let rows: String = (0..5000).map(|i| format!("row{i},{i}\n")).collect();
+    write(dir.path(), "src/pkg0/vectors.csv", &rows);
+    write(dir.path(), "src/pkg0/vectors.json", &rows);
+    let index = indexed(dir.path());
+    assert!(findings_of(&index, "size").is_empty());
+    write(
+        dir.path(),
+        "src/pkg0/huge.rs",
+        &plain_functions("huge", 400),
+    );
+    let index = indexed(dir.path());
+    let found = findings_of(&index, "size");
+    assert!(found.iter().any(|f| f.subject == "src/pkg0/huge.rs"));
+    assert!(found.iter().all(|f| !f.subject.contains("vectors")));
+}
+
+#[test]
+fn comments_in_type_declaration_files_are_not_judged() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline_dirs(dir.path(), 20);
+    let comments: String = (0..80)
+        .map(|i| format!("// note {i} on the next lines\n"))
+        .collect();
+    let chatty = format!("{comments}{}", plain_functions("c", 8));
+    write(dir.path(), "src/pkg0/api.rs", &chatty);
+    let found = findings_of(&indexed(dir.path()), "composition");
+    assert!(found.iter().any(|f| f.subject == "src/pkg0/api.rs"));
+
+    let dir = tempfile::tempdir().unwrap();
+    baseline_dirs(dir.path(), 20);
+    let declared = format!("{comments}export declare function f(): void;\n");
+    write(dir.path(), "src/pkg0/api.d.ts", &declared);
+    let found = findings_of(&indexed(dir.path()), "composition");
+    assert!(found.iter().all(|f| !f.subject.contains("api.d.ts")));
+}
+
+#[test]
 fn size_stays_quiet_when_files_are_alike() {
     let dir = tempfile::tempdir().unwrap();
     baseline(dir.path(), 40);

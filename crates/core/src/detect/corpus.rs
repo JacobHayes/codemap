@@ -1,10 +1,11 @@
 //! The per-file and per-directory totals every detector starts from, loaded once.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use codemap_lang::{Concern, Role};
 
 use crate::reader::{Index, QueryError, SymbolRow};
+use crate::role::is_declaration_file;
 
 /// Generated and vendored lines are reported by the overview but never counted toward an
 /// opportunity: nobody can cut them by editing them.
@@ -20,6 +21,9 @@ pub struct Agg {
     pub tokens: f64,
     /// Lines by role (rows) and concern (columns).
     pub cells: [[f64; Concern::ALL.len()]; Role::ALL.len()],
+    /// Production lines in type-declaration files, and the comment lines among them.
+    pub declaration_prod: f64,
+    pub declaration_comment: f64,
 }
 
 impl Agg {
@@ -27,6 +31,8 @@ impl Agg {
         self.files += other.files;
         self.lines += other.lines;
         self.tokens += other.tokens;
+        self.declaration_prod += other.declaration_prod;
+        self.declaration_comment += other.declaration_comment;
         for (mine, theirs) in self.cells.iter_mut().zip(other.cells) {
             for (a, b) in mine.iter_mut().zip(theirs) {
                 *a += b;
@@ -71,6 +77,9 @@ pub struct FunctionStat {
 pub struct Corpus {
     /// Files with ranked lines.
     pub files: BTreeMap<String, Agg>,
+    /// The files among them written in a recognised programming language: the only ones whose
+    /// size says anything about code.
+    pub code: BTreeSet<String>,
     /// Every directory above those files, root excluded.
     pub dirs: BTreeMap<String, Agg>,
     pub total: Agg,
@@ -88,8 +97,11 @@ impl Corpus {
     pub fn load(index: &Index) -> Result<Self, QueryError> {
         let mut corpus = Self::default();
         let mut statement = index.store().connection().prepare(
-            "SELECT path, role, concern, count(*), CAST(sum(tokens) AS DOUBLE)
-             FROM lines GROUP BY path, role, concern ORDER BY path, role, concern",
+            "SELECT l.path, l.role, l.concern, count(*), CAST(sum(l.tokens) AS DOUBLE),
+                    f.language IS NOT NULL
+             FROM lines l JOIN files f ON f.path = l.path
+             GROUP BY l.path, l.role, l.concern, f.language
+             ORDER BY l.path, l.role, l.concern",
         )?;
         let rows = statement.query_map([], |row| {
             Ok((
@@ -98,20 +110,31 @@ impl Corpus {
                 row.get::<_, String>(2)?,
                 row.get::<_, f64>(3)?,
                 row.get::<_, f64>(4)?,
+                row.get::<_, bool>(5)?,
             ))
         })?;
         for row in rows {
-            let (path, role, concern, lines, tokens) = row?;
+            let (path, role, concern, lines, tokens, is_code) = row?;
             if !is_ranked(&role) {
                 continue;
             }
             let (Some(role), Some(concern)) = (Role::parse(&role), parse_concern(&concern)) else {
                 continue;
             };
+            if is_code {
+                corpus.code.insert(path.clone());
+            }
+            let declaration = role == Role::Prod && is_declaration_file(&path);
             let file = corpus.files.entry(path).or_default();
             file.lines += lines;
             file.tokens += tokens;
             file.cells[position(&Role::ALL, role)][position(&Concern::ALL, concern)] += lines;
+            if declaration {
+                file.declaration_prod += lines;
+                if concern == Concern::Comment {
+                    file.declaration_comment += lines;
+                }
+            }
         }
         for (path, file) in &mut corpus.files {
             file.files = 1.0;

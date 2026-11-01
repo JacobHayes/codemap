@@ -7,8 +7,9 @@
 //! floor, and the sample is big enough to have a distribution. The deviation is floored so a
 //! uniform codebase does not turn small differences into outliers.
 //!
-//! The population is production and test code: a file is measured only if it has such lines, so
-//! configuration, prose and the like are left out of both. Files and directories are sized
+//! The population is production and test code in a recognised programming language: a file is
+//! measured only if it is written in one and has such lines, so configuration, data, markup, prose
+//! and the like are left out of both, and so are functions, which only code files have. Files and directories are sized
 //! against peers of the same kind, production or test, since a suite of small fixtures says
 //! nothing about how big source files should be.
 //!
@@ -118,13 +119,11 @@ impl Detector for Size {
     }
 }
 
-/// The population: files with production or test lines.
+/// The population: files in a recognised programming language with production or test lines.
 fn code_files<'a>(context: &'a Context) -> impl Iterator<Item = (&'a String, &'a Agg)> {
-    context
-        .corpus
-        .files
-        .iter()
-        .filter(|(_, agg)| agg.role(Role::Prod) + agg.role(Role::Test) > 0.0)
+    context.corpus.files.iter().filter(|(path, agg)| {
+        context.corpus.code.contains(*path) && agg.role(Role::Prod) + agg.role(Role::Test) > 0.0
+    })
 }
 
 /// Production and test code are sized separately: a test suite is not a peer of the code it tests.

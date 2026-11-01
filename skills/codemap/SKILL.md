@@ -22,11 +22,15 @@ fix roles once before trusting the areas.
 
 1. `codemap overview`: read the role breakdown. Large generated, config or test shares
    deserve a look.
-2. For each role, find its biggest files: `codemap tree --role <role> --depth 2`, then
-   narrow with `--path <dir>`. Look for generated code with no marker, fixtures that are not
-   tests, copied-in third-party code. Test doubles and fakes that live outside test
-   directories (a `FakeHost` in `src/`) belong in `[roles]` as `test`, or they count as
-   production implementations.
+2. Find the top-mass files: `codemap tree --depth 2` for the whole index, then
+   `codemap tree --role <role> --depth 2` for each role, narrowing with `--path <dir>`. Read
+   the biggest files of each, because the largest masses in a codebase are often not its code.
+   Mark what is not the project's own code: vendored or bundled third-party source, generated
+   code with no marker, snapshots and data (test vectors, fixtures, fonts, tables) that are
+   not tests, copied-in code. Test doubles and fakes that live outside test directories (a
+   `FakeHost` in `src/`) belong in `[roles]` as `test`, or they count as production
+   implementations. Size findings count only files in a recognised programming language, so
+   data files do not rank, but they still skew the role breakdown.
 3. Record fixes in `.codemap/config.toml`. Keys are gitignore-style globs, values are role
    names; the first match wins:
 
