@@ -1,6 +1,7 @@
 //! The query layer: one `Query` in, one `Answer` out. Every surface (CLI, MCP, web UI) is a thin
 //! shell over it.
 
+mod arms;
 mod config;
 mod detect;
 mod event;

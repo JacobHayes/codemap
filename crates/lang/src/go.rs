@@ -45,6 +45,9 @@ pub static GO: Language = Language {
     ],
     case_label_fields: &["value", "type"],
     case_names_bind: false,
+    abort_callees: &["panic"],
+    case_fallthrough: false,
+    capitalised_constructors: false,
     callee_fields: &["function"],
     // `Error` is left out: `err.Error()` renders a message, it does not log one.
     logging_callees: &[

@@ -122,7 +122,9 @@ erDiagram
   confidence, because resolution is by name and can be ambiguous (the rules are in
   `core/src/link.rs`). Symbols also record, from their shape alone, the callee a function only
   forwards its arguments to and whether a type exists to be implemented; **`switches`** holds
-  the case set of every `match`, `switch` and `if` chain over constants.
+  the case set of every `match`, `switch` and `if` chain over constants, and whether its arms
+  include a catch-all, only map cases to constants, give one or two cases a body of their own, or repeat a body
+  across arms.
 - **`similar`** pairs symbols with a kind (exact, near, semantic) and a score: enough pairs to
   connect each cluster of copies, not every pair inside it. **`duplicated`** marks the lines of
   every copy but the longest in each cluster, which is what the `duplicated_lines` base measure

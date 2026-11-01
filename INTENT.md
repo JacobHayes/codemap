@@ -80,8 +80,8 @@ leads with:
 2. **Size and concentration**: outlier files and symbols, and areas holding a disproportionate
    share of the mass.
 3. **Duplicated intent**: exact, near and semantic duplicates, across files and languages.
-4. **Parallel structures**: naming families (`Foo`, `FooV2`, `LegacyFoo`) and the same
-   discriminator switched on in many places.
+4. **Parallel structures**: naming families (`Foo`, `FooV2`, `LegacyFoo`) and the same set of
+   cases matched in many places in ways that look like a table, an accessor or a missed case.
 5. **Indirection**: wrappers, pass-through chains and abstractions with a single
    implementation.
 6. **Handling volume**: lines and blocks of error handling and defensive code, and where they

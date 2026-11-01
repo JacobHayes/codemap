@@ -22,9 +22,16 @@
 //!   and as a suffix.
 //!
 //! **Repeated discriminators.** The extractor records the set of cases every `match`, `switch`
-//! and `if` chain over constants tells apart. The same set of at least [`CASES_MIN`] cases in at
-//! least [`SITES_MIN`] places in production code is one finding: adding a case means finding
-//! all the sites.
+//! and `if` chain over constants tells apart, and what its arms look like. Sites of at least
+//! [`CASES_MIN`] cases that are mostly the same set (a site that names some cases and catches
+//! the rest still belongs to it) are one set when there are [`SITES_MIN`] of them in production
+//! code. Matching a closed set in many places is ordinary, so the finding counts only the sites
+//! that look like something else: a catch-all arm (a new case is silently missed), one or two
+//! real arms among identical trivial ones (a missing accessor), arms that only map cases to
+//! constants (a missing table), and arms for different cases with the same body (the logic
+//! written once per variant). Sites whose arms are distinct behaviour do not count, and a set
+//! needs [`FLAGGED_SITES_MIN`] flagged sites: one on its own is a linter's finding. Sets of
+//! string or number literals are untyped tags and count every site.
 //!
 //! Each is one finding, its own area: the evidence lists every member or site and the mass is
 //! their distinct lines. A family's id is a digest of its stem and kind class and a
@@ -61,7 +68,7 @@ impl Detector for Parallel {
     }
 
     fn describe(&self) -> &'static str {
-        "Names that are versions of each other, and the same set of cases switched on in several places"
+        "Names that are versions of each other, and sets of cases matched in several places with catch-all arms, constant tables or one real arm"
     }
 
     fn detect(&self, context: &Context) -> Result<Vec<Finding>, QueryError> {
@@ -72,7 +79,7 @@ impl Detector for Parallel {
         findings.extend(
             discriminators(context.index)?
                 .iter()
-                .map(discriminator_finding),
+                .filter_map(discriminator_finding),
         );
         Ok(findings)
     }
@@ -291,30 +298,87 @@ fn family_finding(family: &Family, keys: &BTreeMap<String, String>) -> Finding {
 
 // --- repeated discriminators ---
 
+/// A catch-all arm: a case added later falls into it without anyone seeing it. The heaviest
+/// signal, because the miss is silent.
+const WILDCARD_WEIGHT: f64 = 4.0;
+/// One or two arms with real bodies and the rest the same constant: a missing accessor or a
+/// `matches!`.
+const DEGENERATE_WEIGHT: f64 = 2.0;
+/// Arms that only map cases to constants: several of them over one set are a missing data table.
+const TABLE_WEIGHT: f64 = 2.0;
+/// Two arms for different cases with the same body: the logic written once per variant.
+const DUPLICATED_WEIGHT: f64 = 2.0;
+/// A set is a finding only when this many of its sites are flagged: a single catch-all is a
+/// linter's finding, a pattern across sites is codemap's.
+const FLAGGED_SITES_MIN: usize = 2;
+/// Confidence is `score / (score + knee)`; it only breaks ties.
+const SCORE_KNEE: f64 = 12.0;
+/// Confidence floor of literal tags, which count every site.
+const LITERAL_CONFIDENCE: f64 = 0.6;
+/// A site belongs to the case set whose cases hold this share of its own, so a site that handles
+/// some cases and catches the rest is still a site of the whole set.
+const SUBSET_SHARE: f64 = 0.75;
+
 /// One place that switches on a case set.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "four independent features of one site"
+)]
 struct Site {
     /// The enclosing symbol's scope-qualified key, or the path.
     key: String,
     path: String,
     start_line: u32,
     end_line: u32,
+    wildcard: bool,
+    table: bool,
+    degenerate: bool,
+    duplicated: bool,
 }
 
+impl Site {
+    /// What the site adds to its set's score: the heaviest thing it is, or nothing for a site
+    /// whose arms are distinct behaviour.
+    fn weight(&self) -> f64 {
+        if self.wildcard {
+            WILDCARD_WEIGHT
+        } else if self.degenerate {
+            DEGENERATE_WEIGHT
+        } else if self.table {
+            TABLE_WEIGHT
+        } else if self.duplicated {
+            DUPLICATED_WEIGHT
+        } else {
+            0.0
+        }
+    }
+}
+
+/// A case set and every place that switches on it (or on most of it).
 struct CaseSet {
+    /// The cases of the set, which give its finding a stable id.
     labels: Vec<String>,
     sites: Vec<Site>,
+    /// Literal tags (strings, numbers) are always candidates: every site counts.
+    literal: bool,
+}
+
+/// Strings and numbers written out, as against names of an enum or constants.
+fn is_literal(label: &str) -> bool {
+    label.starts_with(['"', '\'', '`', '-']) || label.starts_with(|c: char| c.is_ascii_digit())
 }
 
 fn discriminators(index: &Index) -> Result<Vec<CaseSet>, QueryError> {
     let mut statement = index.store().connection().prepare(
-        "SELECT w.path, w.start_line, w.end_line, w.labels, l.role, w.symbol
+        "SELECT w.path, w.start_line, w.end_line, w.labels, l.role,
+                w.wildcard, w.table_like, w.degenerate, w.symbol, w.duplicated
          FROM switches w JOIN lines l ON l.path = w.path AND l.line = w.start_line
          ORDER BY w.labels, w.path, w.start_line",
     )?;
     let keys = index.member_keys()?;
     let rows = statement.query_map(params![], |row| {
         let path: String = row.get(0)?;
-        let symbol: Option<String> = row.get(5)?;
+        let symbol: Option<String> = row.get(8)?;
         Ok((
             Site {
                 key: symbol
@@ -323,46 +387,165 @@ fn discriminators(index: &Index) -> Result<Vec<CaseSet>, QueryError> {
                 path,
                 start_line: row.get(1)?,
                 end_line: row.get(2)?,
+                wildcard: row.get(5)?,
+                table: row.get(6)?,
+                degenerate: row.get(7)?,
+                duplicated: row.get(9)?,
             },
             row.get::<_, String>(3)?,
             row.get::<_, String>(4)?,
         ))
     })?;
-    let mut sets: BTreeMap<String, Vec<Site>> = BTreeMap::new();
+    let mut sets: BTreeMap<Vec<String>, Vec<Site>> = BTreeMap::new();
     for row in rows {
         let (site, labels, role) = row?;
         if is_ranked(&role) && role != Role::Test.as_str() {
+            let labels = labels.split(LABEL_SEPARATOR).map(str::to_owned).collect();
             sets.entry(labels).or_default().push(site);
         }
     }
-    Ok(sets
+    let (literal, named): (Vec<_>, Vec<_>) = sets
         .into_iter()
-        .filter(|(labels, sites)| {
-            labels.split(LABEL_SEPARATOR).count() >= CASES_MIN && sites.len() >= SITES_MIN
-        })
+        .filter(|(labels, _)| labels.len() >= CASES_MIN)
+        .partition(|(labels, _)| labels.iter().all(|label| is_literal(label)));
+    let mut found: Vec<CaseSet> = literal
+        .into_iter()
         .map(|(labels, sites)| CaseSet {
-            labels: labels.split(LABEL_SEPARATOR).map(str::to_owned).collect(),
+            labels,
             sites,
+            literal: true,
         })
-        .collect())
+        .collect();
+    found.extend(cluster(named));
+    found.retain(|set| set.sites.len() >= SITES_MIN);
+    Ok(found)
 }
 
-fn discriminator_finding(set: &CaseSet) -> Finding {
-    let shown: Vec<&str> = set.labels.iter().take(5).map(String::as_str).collect();
-    let reason = format!(
-        "The same {} cases ({}{}) are switched on in {} places.",
-        set.labels.len(),
-        shown.join(", "),
-        if set.labels.len() > shown.len() {
-            ", ..."
+/// Groups case sets that are mostly the same cases, the largest first: the biggest set stands
+/// for the type, and a smaller one that is mostly inside it is a partial match on that type.
+fn cluster(mut sets: Vec<(Vec<String>, Vec<Site>)>) -> Vec<CaseSet> {
+    sets.sort_by_key(|(labels, _)| std::cmp::Reverse(labels.len()));
+    let mut clusters: Vec<(BTreeSet<String>, Vec<Site>)> = Vec::new();
+    // Clusters each label belongs to, so a set only meets the clusters it shares a case with.
+    let mut by_label: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (labels, sites) in sets {
+        let mut shared: BTreeMap<usize, usize> = BTreeMap::new();
+        for label in &labels {
+            for &at in by_label.get(label).into_iter().flatten() {
+                *shared.entry(at).or_default() += 1;
+            }
+        }
+        let home = shared.into_iter().find(|&(_, shared)| {
+            shared >= CASES_MIN && number(shared) >= SUBSET_SHARE * number(labels.len())
+        });
+        if let Some((at, _)) = home {
+            clusters[at].1.extend(sites);
         } else {
-            ""
-        },
-        set.sites.len()
-    );
-    let files: BTreeSet<&str> = set.sites.iter().map(|s| s.path.as_str()).collect();
+            for label in &labels {
+                by_label
+                    .entry(label.clone())
+                    .or_default()
+                    .push(clusters.len());
+            }
+            clusters.push((labels.into_iter().collect(), sites));
+        }
+    }
+    clusters
+        .into_iter()
+        .map(|(universe, sites)| CaseSet {
+            labels: universe.into_iter().collect(),
+            sites,
+            literal: false,
+        })
+        .collect()
+}
+
+/// The sites that make the set worth a look, or none when it is not: behaviour dispatch is
+/// left out, and a set needs [`FLAGGED_SITES_MIN`] sites that stand out.
+fn flagged(set: &CaseSet) -> Vec<&Site> {
+    if set.literal {
+        return set.sites.iter().collect();
+    }
+    let flagged: Vec<&Site> = set
+        .sites
+        .iter()
+        .filter(|site| site.weight() > 0.0)
+        .collect();
+    if flagged.len() < FLAGGED_SITES_MIN {
+        return Vec::new();
+    }
+    flagged
+}
+
+fn plural(count: usize, one: &str, many: &str) -> String {
+    format!("{count} {}", if count == 1 { one } else { many })
+}
+
+/// How many flagged sites have each feature; a site with several counts in each.
+struct Counts {
+    wildcards: usize,
+    degenerate: usize,
+    tables: usize,
+    duplicated: usize,
+}
+
+/// The reason, as the counts alone.
+fn discriminator_reason(set: &CaseSet, counts: &Counts) -> String {
+    let mut details = Vec::new();
+    if counts.tables > 0 {
+        details.push(format!("case-to-constant tables: {}", counts.tables));
+    }
+    if counts.degenerate > 0 {
+        details.push(format!(
+            "one or two own arms, the rest one constant: {}",
+            counts.degenerate
+        ));
+    }
+    if counts.duplicated > 0 {
+        details.push(format!("arms with identical bodies: {}", counts.duplicated));
+    }
+    if counts.wildcards > 0 {
+        details.push(format!("catch-all arms: {}", counts.wildcards));
+    }
+    let kind = if set.literal {
+        "literal cases"
+    } else {
+        "cases"
+    };
+    let places = plural(set.sites.len(), "place", "places");
+    let detail = if details.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", details.join(", "))
+    };
+    format!(
+        "A set of {} {kind} is matched in {places}{detail}.",
+        set.labels.len()
+    )
+}
+
+/// The finding for a set, counting only its flagged sites.
+fn discriminator_finding(set: &CaseSet) -> Option<Finding> {
+    let flagged = flagged(set);
+    if flagged.is_empty() {
+        return None;
+    }
+    let count = |pick: fn(&Site) -> bool| flagged.iter().filter(|site| pick(site)).count();
+    let counts = Counts {
+        wildcards: count(|site| site.wildcard),
+        degenerate: count(|site| site.degenerate),
+        tables: count(|site| site.table),
+        duplicated: count(|site| site.duplicated),
+    };
+    let score: f64 = flagged.iter().map(|site| site.weight()).sum();
+    let confidence = if set.literal {
+        LITERAL_CONFIDENCE.max(score / (score + SCORE_KNEE))
+    } else {
+        score / (score + SCORE_KNEE)
+    };
+    let files: BTreeSet<&str> = flagged.iter().map(|s| s.path.as_str()).collect();
     let mass = distinct_lines_by_path(
-        set.sites
+        flagged
             .iter()
             .map(|s| (s.path.as_str(), s.start_line, s.end_line)),
     )
@@ -372,25 +555,43 @@ fn discriminator_finding(set: &CaseSet) -> Finding {
         "parallel",
         &group_id("parallel", &set.labels),
         places_title(
-            &format!("The same {} cases switched on", set.labels.len()),
-            set.sites.len(),
+            &format!("Set of {} cases", set.labels.len()),
+            flagged.len(),
             files.len(),
         ),
-        reason,
+        discriminator_reason(set, &counts),
         f64::from(mass),
-        0.6,
+        confidence,
     )
     .measure("cases", number(set.labels.len()))
     .measure("sites", number(set.sites.len()))
-    .measure("files", number(files.len()));
+    .measure("flaggedSites", number(flagged.len()))
+    .measure("wildcardSites", number(counts.wildcards))
+    .measure("degenerateSites", number(counts.degenerate))
+    .measure("tableSites", number(counts.tables))
+    .measure("duplicatedSites", number(counts.duplicated))
+    .measure("files", number(files.len()))
+    .measure("score", score)
+    .fact(format!("{} cases", set.labels.len()))
+    .fact(format!(
+        "matched in {}",
+        plural(set.sites.len(), "place", "places")
+    ))
+    .fact(format!("{} case-to-constant tables", counts.tables))
+    .fact(format!(
+        "{} with one or two own arms and one constant for the rest",
+        counts.degenerate
+    ))
+    .fact(format!("arms with identical bodies: {}", counts.duplicated))
+    .fact(format!("{} with a catch-all arm", counts.wildcards));
     finding
         .labels
         .insert("signal".to_owned(), "repeated_discriminator".to_owned());
-    finding = finding.members(set.sites.iter().map(|s| s.key.clone()));
-    for site in &set.sites {
+    finding = finding.members(flagged.iter().map(|s| s.key.clone()));
+    for site in &flagged {
         finding = finding.evidence(&site.path, &[(site.start_line, site.end_line)]);
     }
-    finding
+    Some(finding)
 }
 
 #[cfg(test)]

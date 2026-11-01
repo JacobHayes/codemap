@@ -68,6 +68,10 @@ pub struct RefFact {
 }
 
 /// The cases a `match`, `switch` or `if` chain tells apart, as comparable labels.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "four independent features of one site"
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SwitchFact {
     /// Index into [`FileFacts::symbols`] of the symbol the switch sits in.
@@ -76,6 +80,15 @@ pub struct SwitchFact {
     pub end_line: u32,
     /// Distinct, sorted, with payloads and catch-alls removed.
     pub labels: Vec<String>,
+    /// A catch-all arm (`_`, a bare binding, `default`, an `else`) or an arm that only aborts:
+    /// a case added later is not seen here.
+    pub wildcard: bool,
+    /// Every arm maps its cases to a constant, with no logic.
+    pub table: bool,
+    /// One or two arms have a body of their own; every other arm has the same trivial body.
+    pub degenerate: bool,
+    /// Two arms for different cases have the same body, with logic of its own.
+    pub duplicated: bool,
 }
 
 /// Everything extracted from one file.

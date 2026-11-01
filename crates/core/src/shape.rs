@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 
 use codemap_lang::{Kind, Language, Node};
 
+use crate::arms;
 use crate::facts::SwitchFact;
 
 /// A function whose body has more than this many nodes beyond its one call (the block and a
@@ -28,7 +29,7 @@ const CHAIN_COMPARISONS_MIN: usize = 3;
 /// How deep below an `if` condition a comparison is looked for (parentheses, `not`, `and`).
 const COMPARISON_DEPTH_MAX: usize = 4;
 
-fn kind_of(kinds: &[Option<Kind>], node: &Node) -> Option<Kind> {
+pub(crate) fn kind_of(kinds: &[Option<Kind>], node: &Node) -> Option<Kind> {
     if node.is_named() {
         kinds.get(usize::from(node.kind_id())).copied().flatten()
     } else {
@@ -40,7 +41,7 @@ fn line(row: usize) -> u32 {
     u32::try_from(row + 1).unwrap_or(u32::MAX)
 }
 
-fn text<'a>(node: &Node, source: &'a [u8]) -> &'a str {
+pub(crate) fn text<'a>(node: &Node, source: &'a [u8]) -> &'a str {
     node.utf8_text(source).unwrap_or("")
 }
 
@@ -265,13 +266,20 @@ pub(crate) fn switches(
     let mut stack = vec![*root];
     while let Some(node) = stack.pop() {
         let facts = match kind_of(kinds, &node) {
-            Some(Kind::Switch) => Some(switch_labels(language, kinds, &node, source)),
+            Some(Kind::Switch) => {
+                let (labels, last) = switch_labels(language, kinds, &node, source);
+                Some((labels, last, arms::classify(language, kinds, &node, source)))
+            }
             Some(Kind::Conditional) if !in_chain.contains(&node.id()) => {
-                chain_labels(kinds, &node, source, &mut in_chain)
+                chain_labels(kinds, &node, source, &mut in_chain).map(|chain| {
+                    let shape =
+                        arms::classify_chain(language, kinds, &chain.links, chain.closing, source);
+                    (chain.labels, chain.last, shape)
+                })
             }
             _ => None,
         };
-        if let Some((labels, last)) = facts {
+        if let Some((labels, last, shape)) = facts {
             let labels = normalise(&labels, language.case_names_bind);
             if !labels.is_empty() {
                 found.push(SwitchFact {
@@ -279,6 +287,10 @@ pub(crate) fn switches(
                     start_line: line(node.start_position().row),
                     end_line: line(last.end_position().row),
                     labels,
+                    wildcard: shape.wildcard,
+                    table: shape.table,
+                    degenerate: shape.degenerate,
+                    duplicated: shape.duplicated,
                 });
             }
         }
@@ -289,43 +301,58 @@ pub(crate) fn switches(
     found
 }
 
-/// A switch keeps its cases in a `body`, or directly among its children (Go).
+/// The cases of a switch: kept in a `body`, or directly among its children (Go).
+pub(crate) fn case_nodes<'t>(kinds: &[Option<Kind>], switch: &Node<'t>) -> Vec<Node<'t>> {
+    let body = switch.child_by_field_name("body");
+    let cases = body.as_ref().unwrap_or(switch);
+    let mut cursor = cases.walk();
+    cases
+        .named_children(&mut cursor)
+        .filter(|case| match kind_of(kinds, case) {
+            Some(Kind::Comment) => false,
+            kind => body.is_some() || kind == Some(Kind::Branch),
+        })
+        .collect()
+}
+
 fn switch_labels<'t>(
     language: &Language,
     kinds: &[Option<Kind>],
     switch: &Node<'t>,
     source: &[u8],
 ) -> (Vec<String>, Node<'t>) {
-    let mut labels = Vec::new();
-    let body = switch.child_by_field_name("body");
-    let cases = body.as_ref().unwrap_or(switch);
-    let mut cursor = cases.walk();
-    for case in cases.named_children(&mut cursor) {
-        if body.is_none() && kind_of(kinds, &case) != Some(Kind::Branch) {
-            continue;
-        }
-        labels.extend(case_labels(language, &case, source));
-    }
+    let labels = case_nodes(kinds, switch)
+        .iter()
+        .flat_map(|case| case_labels(language, case, source))
+        .collect();
     (labels, *switch)
 }
 
-/// What one case matches: the first of the language's label fields that exists, split into its
-/// parts when it is a list (`case a, b:`, or a type case naming several types).
-fn case_labels(language: &Language, case: &Node, source: &[u8]) -> Vec<String> {
+/// The nodes a case matches: the first of the language's label fields that exists.
+pub(crate) fn label_nodes<'t>(language: &Language, case: &Node<'t>) -> Vec<Node<'t>> {
     let mut cursor = case.walk();
-    let found = language.case_label_fields.iter().find_map(|name| {
-        let fields: Vec<Node> = case.children_by_field_name(name, &mut cursor).collect();
-        if fields.is_empty() {
-            let mut inner = case.walk();
-            case.named_children(&mut inner)
-                .find(|child| child.kind() == *name)
-                .map(|child| vec![child])
-        } else {
-            Some(fields)
-        }
-    });
+    language
+        .case_label_fields
+        .iter()
+        .find_map(|name| {
+            let fields: Vec<Node> = case.children_by_field_name(name, &mut cursor).collect();
+            if fields.is_empty() {
+                let mut inner = case.walk();
+                case.named_children(&mut inner)
+                    .find(|child| child.kind() == *name)
+                    .map(|child| vec![child])
+            } else {
+                Some(fields)
+            }
+        })
+        .unwrap_or_default()
+}
+
+/// What one case matches, split into its parts when it is a list (`case a, b:`, or a type case
+/// naming several types).
+fn case_labels(language: &Language, case: &Node, source: &[u8]) -> Vec<String> {
     let mut labels = Vec::new();
-    for label in found.unwrap_or_default() {
+    for label in label_nodes(language, case) {
         if label.kind().ends_with("_list") {
             let mut inner = label.walk();
             labels.extend(
@@ -340,16 +367,27 @@ fn case_labels(language: &Language, case: &Node, source: &[u8]) -> Vec<String> {
     labels
 }
 
-/// The constants an `if`/`else if` chain starting at `head` compares one expression with, and
-/// the last link of the chain. Every link is added to `in_chain` so it is not a chain of its own.
+/// An `if`/`else if` chain that compares one expression with constants.
+struct Chain<'t> {
+    labels: Vec<String>,
+    /// The last link, which ends the chain's lines.
+    last: Node<'t>,
+    links: Vec<Node<'t>>,
+    /// The closing `else`, if there is one.
+    closing: Option<Node<'t>>,
+}
+
+/// The constants an `if`/`else if` chain starting at `head` compares one expression with. Every
+/// link is added to `in_chain` so it is not a chain of its own.
 fn chain_labels<'t>(
     kinds: &[Option<Kind>],
     head: &Node<'t>,
     source: &[u8],
     in_chain: &mut BTreeSet<usize>,
-) -> Option<(Vec<String>, Node<'t>)> {
+) -> Option<Chain<'t>> {
     let mut links = Vec::new();
-    collect_chain(kinds, head, &mut links);
+    let mut closing = None;
+    collect_chain(kinds, head, &mut links, &mut closing);
     in_chain.extend(links.iter().map(Node::id));
     let compared: Vec<(&str, &str)> = links
         .iter()
@@ -361,23 +399,39 @@ fn chain_labels<'t>(
         .filter(|(left, _)| *left == subject)
         .map(|(_, right)| (*right).to_owned())
         .collect();
-    (labels.len() >= CHAIN_COMPARISONS_MIN).then(|| (labels, *links.last().unwrap_or(head)))
+    (labels.len() >= CHAIN_COMPARISONS_MIN).then(|| Chain {
+        labels,
+        last: *links.last().unwrap_or(head),
+        links,
+        closing,
+    })
 }
 
 /// The links of an `if` chain, in order: each `elif`, and each `else` that holds another `if`.
-fn collect_chain<'t>(kinds: &[Option<Kind>], link: &Node<'t>, out: &mut Vec<Node<'t>>) {
+/// An `else` that holds none closes the chain.
+fn collect_chain<'t>(
+    kinds: &[Option<Kind>],
+    link: &Node<'t>,
+    out: &mut Vec<Node<'t>>,
+    closing: &mut Option<Node<'t>>,
+) {
     out.push(*link);
     let mut cursor = link.walk();
     for alternative in link.children_by_field_name("alternative", &mut cursor) {
         if kind_of(kinds, &alternative) == Some(Kind::Conditional) {
-            collect_chain(kinds, &alternative, out);
-        } else {
-            let mut inner = alternative.walk();
-            for child in alternative.named_children(&mut inner) {
-                if kind_of(kinds, &child) == Some(Kind::Conditional) {
-                    collect_chain(kinds, &child, out);
-                }
-            }
+            collect_chain(kinds, &alternative, out, closing);
+            continue;
+        }
+        let mut inner = alternative.walk();
+        let nested: Vec<Node> = alternative
+            .named_children(&mut inner)
+            .filter(|child| kind_of(kinds, child) == Some(Kind::Conditional))
+            .collect();
+        if nested.is_empty() {
+            *closing = Some(alternative);
+        }
+        for child in nested {
+            collect_chain(kinds, &child, out, closing);
         }
     }
 }
@@ -415,6 +469,72 @@ fn comparison<'a>(
         .find_map(|child| comparison(kinds, child, source, depth + 1))
 }
 
+/// The alternatives of an or-pattern, split at the bars outside any payload.
+pub(crate) fn alternatives(case: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0_u32;
+    let mut start = 0;
+    let mut quote = None;
+    let mut escaped = false;
+    for (at, c) in case.char_indices() {
+        // Brackets and bars inside a quoted literal are text.
+        if let Some(open) = quote {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == open {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '"' | '\'' | '`' => quote = Some(c),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            '|' if depth == 0 => {
+                parts.push(&case[start..at]);
+                start = at + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&case[start..]);
+    parts
+}
+
+/// One alternative of a case pattern with its payload cut. Payloads are cut from patterns only;
+/// in an expression `[]int` is the label.
+fn pattern_part(part: &str, names_bind: bool) -> &str {
+    let part = part
+        .trim()
+        .trim_start_matches('&')
+        .trim_start_matches("ref ");
+    if part.starts_with(['"', '\'', '`']) || !names_bind {
+        part
+    } else {
+        part.split(['(', '{', '[']).next().unwrap_or(part).trim()
+    }
+}
+
+/// Whether a pattern part is a name that matches anything rather than a constant.
+fn is_binding(part: &str, names_bind: bool) -> bool {
+    let literal = matches!(part, "true" | "false" | "null" | "undefined" | "nil");
+    names_bind
+        && part.starts_with(|c: char| c.is_lowercase() || c == '_')
+        && !part.contains(['.', ':'])
+        && !literal
+}
+
+/// Whether a case text matches anything: one of its alternatives is a bare binding, and no guard
+/// narrows it.
+pub(crate) fn matches_anything(case: &str, names_bind: bool) -> bool {
+    !case.contains(" if ")
+        && alternatives(case)
+            .into_iter()
+            .any(|part| is_binding(pattern_part(part, names_bind), names_bind))
+}
+
 /// Case texts as comparable labels: or-patterns split, payloads and guards cut, catch-alls and
 /// bindings dropped, duplicates removed, sorted.
 fn normalise(cases: &[String], names_bind: bool) -> Vec<String> {
@@ -426,27 +546,9 @@ fn normalise(cases: &[String], names_bind: bool) -> Vec<String> {
             continue;
         }
         let case = case.split(" if ").next().unwrap_or(case);
-        for part in case.split('|') {
-            let part = part
-                .trim()
-                .trim_start_matches('&')
-                .trim_start_matches("ref ");
-            let part = if part.starts_with(['"', '\'', '`']) {
-                part
-            } else {
-                // Payloads are cut from patterns only; in an expression `[]int` is the label.
-                if names_bind {
-                    part.split(['(', '{', '[']).next().unwrap_or(part).trim()
-                } else {
-                    part
-                }
-            };
-            let literal = matches!(part, "true" | "false" | "null" | "undefined" | "nil");
-            let binding = names_bind
-                && part.starts_with(|c: char| c.is_lowercase() || c == '_')
-                && !part.contains(['.', ':'])
-                && !literal;
-            if !part.is_empty() && !binding {
+        for part in alternatives(case) {
+            let part = pattern_part(part, names_bind);
+            if !part.is_empty() && !is_binding(part, names_bind) {
                 labels.insert(part.to_owned());
             }
         }

@@ -108,6 +108,10 @@ your session.
 - A finding is a lead, not a verdict. Dismiss false leads quickly and say why.
 - Size is a signal in itself: a very large file, test suite or document is worth a look even
   when it is tidy.
+- A `parallel` finding on a set of cases counts only the places that stand out: catch-all arms
+  (a new case lands there unseen), sites that only map cases to constants, and sites where one
+  or two cases carry all the logic, and arms for different cases with the same body. Matching a closed set exhaustively in many places is
+  ordinary and is not counted; read the listed sites and judge.
 - If a top area is something nobody can cut by editing (a generated or vendored file), fix
   its role in `[roles]`; do not argue with the ranking.
 - Report the few areas that matter with the evidence you read, not the whole list.

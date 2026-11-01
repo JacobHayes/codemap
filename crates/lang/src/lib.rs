@@ -165,6 +165,16 @@ pub struct Language {
     /// Whether a bare lowercase name in a case is a binding that matches anything (a Rust or
     /// Python pattern) rather than a constant or a type (a Go, JavaScript or TypeScript case).
     pub case_names_bind: bool,
+    /// Callee names (last path segment, without a macro `!`) whose call only aborts: an arm that
+    /// holds nothing else is a trap for the cases it does not name. A `throw` or `raise`
+    /// statement is recognised by its node kind.
+    pub abort_callees: &'static [&'static str],
+    /// Whether a case with no statements runs the next case's (JavaScript), as against ending
+    /// the switch (Go).
+    pub case_fallthrough: bool,
+    /// Whether calling a capitalised name builds a value (a Rust variant, a Python class), as
+    /// against calling an exported function (Go).
+    pub capitalised_constructors: bool,
     /// Fields of a call node that hold the callee.
     pub callee_fields: &'static [&'static str],
     /// Callee names (last path segment) that are logging.
