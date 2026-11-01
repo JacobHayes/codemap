@@ -301,6 +301,26 @@ fn a_method_of_a_constant_or_of_a_destructured_parameter_is_not_a_forwarded_call
 }
 
 #[test]
+fn a_call_that_passes_only_literals_or_destructured_names_is_not_a_wrapper() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    write(
+        dir.path(),
+        "src/sys.rs",
+        "fn create_raw(flags: i32) -> i32 {\n    let a = flags + 1;\n    a * 2\n}\n\nfn open_raw() -> i32 {\n    let a = 1;\n    a * 2\n}\n\npub fn create() -> i32 {\n    create_raw(0)\n}\n\npub fn open() -> i32 {\n    open_raw()\n}\n\npub fn create_with(flags: i32) -> i32 {\n    create_raw(flags)\n}\n",
+    );
+    write(
+        dir.path(),
+        "web/ask.ts",
+        "export function ask(deriver: string) {\n  const upper = deriver.toUpperCase();\n  return upper + deriver;\n}\n\nexport const read = ({ deriver }: Host) => ask(deriver);\n",
+    );
+    let index = indexed(dir.path());
+    // `open` and `create_with` forward; `create` passes only a literal and `read` only a name
+    // picked out of its parameter.
+    assert_eq!(signal(&index, "pass_through").len(), 2);
+}
+
+#[test]
 fn a_type_assertion_with_a_string_type_is_still_a_wrapper() {
     let dir = tempfile::tempdir().unwrap();
     baseline(dir.path(), 5);

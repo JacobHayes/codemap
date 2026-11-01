@@ -198,17 +198,23 @@ pub(crate) fn forwarded_callee(
     }
     let mut passed = BTreeSet::new();
     identifiers(&arguments, source, false, &mut passed);
+    // A destructured parameter is a name picked out of an argument, not an argument: passing it
+    // on is a step of work. Only the names of plain parameters count as passed on.
+    let mut plain = BTreeSet::new();
     let mut own = BTreeSet::new();
     for field in ["parameters", "parameter"] {
         if let Some(parameters) = function.child_by_field_name(field) {
+            identifiers(&parameters, source, false, &mut plain);
             identifiers(&parameters, source, true, &mut own);
         }
     }
-    // Passing nothing on is not forwarding unless there was nothing to pass.
+    // Passing nothing on is not forwarding unless there was nothing to pass. A call whose
+    // arguments are all literals passes nothing of the function's own on.
     let receivers = ["self", "this", "cls"];
     let has_arguments = own.iter().any(|name| !receivers.contains(name));
     let passes_arguments = passed.iter().any(|name| !receivers.contains(name));
-    (passed.is_subset(&own) && (passes_arguments || !has_arguments))
+    let only_literals = passed.is_empty() && arguments.named_child_count() > 0;
+    (passed.is_subset(&plain) && (passes_arguments || !has_arguments) && !only_literals)
         .then(|| callee_name(language, &call, source, &own))
         .flatten()
 }
