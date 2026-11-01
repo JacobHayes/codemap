@@ -37,6 +37,7 @@ pub static RUST: Language = Language {
         "(impl_item trait: (generic_type type: [(type_identifier) @name (scoped_type_identifier name: (type_identifier) @name)])) @reference.implementation",
     ],
     case_label_fields: &["pattern"],
+    case_names_bind: true,
     callee_fields: &["function", "macro"],
     logging_callees: &["trace", "debug", "info", "warn", "error", "log", "eprintln"],
     assertion_prefixes: &["assert", "debug_assert"],

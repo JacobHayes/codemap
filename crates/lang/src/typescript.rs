@@ -25,6 +25,7 @@ pub static TYPESCRIPT: Language = Language {
         TEST_TAGS_QUERIES[2],
     ],
     case_label_fields: CASE_LABEL_FIELDS,
+    case_names_bind: false,
     callee_fields: &["function"],
     logging_callees: LOGGING_CALLEES,
     assertion_prefixes: ASSERTION_PREFIXES,

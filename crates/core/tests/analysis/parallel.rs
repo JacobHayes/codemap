@@ -142,20 +142,22 @@ fn switches_in_other_forms_and_languages_count_and_tests_do_not() {
     baseline(dir.path(), 5);
     let ts = |name: &str| {
         format!(
-            "export function {name}(kind: string): number {{\n  switch (kind) {{\n    case 'circle': return 1;\n    case 'square': return 2;\n    case 'line': return 3;\n    default: return 0;\n  }}\n}}\n"
+            "export function {name}(kind: string): number {{\n  switch (kind) {{\n    case \"circle\": return 1;\n    case \"square\": return 2;\n    case \"line\": return 3;\n    default: return 0;\n  }}\n}}\n"
         )
     };
     let py = |name: &str| {
         format!(
-            "def {name}(kind):\n    if kind == 'circle':\n        return 1\n    elif kind == 'square':\n        return 2\n    elif kind == 'line':\n        return 3\n    return 0\n"
+            "def {name}(kind):\n    if kind == \"circle\":\n        return 1\n    elif kind == \"square\":\n        return 2\n    elif kind == \"line\":\n        return 3\n    return 0\n"
         )
     };
     write(dir.path(), "web/a.ts", &ts("a"));
     write(dir.path(), "web/b.ts", &ts("b"));
     write(dir.path(), "svc/c.py", &py("c"));
+    let go = "package svc\n\nfunc d(kind string) int {\n\tswitch kind {\n\tcase \"circle\":\n\t\treturn 1\n\tcase \"square\":\n\t\treturn 2\n\tcase \"line\":\n\t\treturn 3\n\tdefault:\n\t\treturn 0\n\t}\n}\n";
+    write(dir.path(), "svc/d.go", go);
     let index = indexed(dir.path());
-    // Three sites of one set across a switch and an if chain, in two languages.
-    assert_eq!(signal(&index, "repeated_discriminator").len(), 3);
+    // Four sites of one set across a switch and an if chain, in three languages.
+    assert_eq!(signal(&index, "repeated_discriminator").len(), 4);
 
     let quiet = tempfile::tempdir().unwrap();
     baseline(quiet.path(), 5);
@@ -164,6 +166,38 @@ fn switches_in_other_forms_and_languages_count_and_tests_do_not() {
     }
     let index = indexed(quiet.path());
     assert!(signal(&index, "repeated_discriminator").is_empty());
+}
+
+#[test]
+fn go_cases_listed_together_or_apart_and_type_switches_are_one_case_set() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    let apart = "package svc\n\nfunc a(v any) int {\n\tswitch v.(type) {\n\tcase int:\n\t\treturn 1\n\tcase string:\n\t\treturn 2\n\tcase bool:\n\t\treturn 3\n\t}\n\treturn 0\n}\n";
+    let together = "package svc\n\nfunc b(v any) int {\n\tswitch v.(type) {\n\tcase int, string:\n\t\treturn 1\n\tcase bool:\n\t\treturn 3\n\t}\n\treturn 0\n}\n";
+    let named = "package svc\n\nfunc c(v int) int {\n\tswitch v {\n\tcase modeOne, modeTwo:\n\t\treturn 1\n\tcase modeThree:\n\t\treturn 3\n\t}\n\treturn 0\n}\n";
+    write(dir.path(), "svc/a.go", apart);
+    write(dir.path(), "svc/b.go", together);
+    write(dir.path(), "svc/c.go", &apart.replace("func a", "func c"));
+    // Constants named in lowercase are cases too, not bindings.
+    for name in ["d", "e", "f"] {
+        write(
+            dir.path(),
+            &format!("svc/{name}.go"),
+            &named.replace("func c", &format!("func {name}")),
+        );
+    }
+    let index = indexed(dir.path());
+    let found = signal(&index, "repeated_discriminator");
+    let mut areas: Vec<_> = found.iter().map(|f| f.area.as_str()).collect();
+    areas.sort_unstable();
+    assert_eq!(
+        areas,
+        [
+            "svc/a.go", "svc/b.go", "svc/c.go", "svc/d.go", "svc/e.go", "svc/f.go"
+        ]
+    );
+    let sites: Vec<_> = found.iter().map(|f| f.measures["sites"]).collect();
+    assert_eq!(sites, [3.0; 6]);
 }
 
 #[test]

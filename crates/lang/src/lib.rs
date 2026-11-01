@@ -1,6 +1,7 @@
 //! Grammars and their node-kind tables. A [`Language`] is data: the generic extractor in
 //! `codemap-core` reads it and no language has code of its own beyond a small `mark` function.
 
+mod go;
 mod javascript;
 mod python;
 mod rust;
@@ -152,6 +153,9 @@ pub struct Language {
     /// Where a case of a `Switch` keeps what it matches: a field name, or the kind of a child
     /// when the grammar has no field for it. The first that exists wins.
     pub case_label_fields: &'static [&'static str],
+    /// Whether a bare lowercase name in a case is a binding that matches anything (a Rust or
+    /// Python pattern) rather than a constant or a type (a Go, JavaScript or TypeScript case).
+    pub case_names_bind: bool,
     /// Fields of a call node that hold the callee.
     pub callee_fields: &'static [&'static str],
     /// Callee names (last path segment) that are logging.
@@ -172,6 +176,7 @@ pub static LANGUAGES: &[&Language] = &[
     &javascript::JAVASCRIPT,
     &typescript::TYPESCRIPT,
     &typescript::TSX,
+    &go::GO,
 ];
 
 /// The language for a path, by extension.

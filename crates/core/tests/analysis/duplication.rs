@@ -70,6 +70,25 @@ fn copies_are_one_group_that_every_file_with_a_member_points_at() {
     assert_eq!(area.mass_lines, 18.0);
 }
 
+#[test]
+fn go_copies_under_other_names_are_a_group() {
+    let go = |name: &str, items: &str, sum: &str| {
+        format!(
+            "package pkg\n\nfunc {name}({items} []Item) float64 {{\n\t{sum} := 0.0\n\tfor _, item := range {items} {{\n\t\tif item.Active {{\n\t\t\t{sum} += item.Price * float64(item.Count)\n\t\t}}\n\t}}\n\treturn {sum} * 1.5\n}}\n"
+        )
+    };
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 20);
+    write(dir.path(), "a/one.go", &go("one", "items", "sum"));
+    write(dir.path(), "b/two.go", &go("two", "rows", "acc"));
+    write(dir.path(), "c/three.go", &go("three", "list", "total"));
+    let index = indexed(dir.path());
+    let found = duplication_in(&index, "a/one.go");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].measures["members"], 3.0);
+    assert_eq!(found[0].labels["kind"], "function");
+}
+
 fn indexed_copies() -> (tempfile::TempDir, codemap_core::Index) {
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "a.rs", &total("total", "items", "sum", "1.5"));

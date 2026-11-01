@@ -12,7 +12,17 @@ use crate::facts::SwitchFact;
 /// `return`, `await` or `?` around it) is doing more than forwarding.
 const FORWARD_EXTRA_NODES_MAX: u32 = 3;
 /// Node kinds containing these compute something: a body with one is not forwarding.
-const COMPUTING: &[&str] = &["binary", "unary", "ternary", "operator", "assignment"];
+/// So do statements that schedule, defer or hand off the call rather than make it.
+const COMPUTING: &[&str] = &[
+    "binary",
+    "unary",
+    "ternary",
+    "operator",
+    "assignment",
+    "send_statement",
+    "go_statement",
+    "defer_statement",
+];
 /// Comparisons against the same expression that make an `if` chain a switch in disguise.
 const CHAIN_COMPARISONS_MIN: usize = 3;
 /// How deep below an `if` condition a comparison is looked for (parentheses, `not`, `and`).
@@ -64,7 +74,7 @@ impl Body {
             Some(Kind::Call) => self.calls += 1,
             _ => {}
         }
-        if node.is_named() && !in_call && kind != Some(Kind::Call) {
+        if node.is_named() && !in_call && kind != Some(Kind::Call) && !is_list_wrapper(node) {
             self.extra_nodes += 1;
         }
         let inside = in_call || kind == Some(Kind::Call);
@@ -73,6 +83,15 @@ impl Body {
             self.scan(kinds, &child, inside);
         }
     }
+}
+
+/// A node that only holds one other node and spans exactly it (Go's `statement_list` and
+/// `expression_list`): it adds nothing of its own.
+fn is_list_wrapper(node: &Node) -> bool {
+    node.named_child_count() == 1
+        && node
+            .named_child(0)
+            .is_some_and(|only| only.byte_range() == node.byte_range())
 }
 
 /// The identifiers a subtree names: `self` and `this` count, so do plain and type identifiers.
@@ -240,14 +259,14 @@ pub(crate) fn switches(
     let mut stack = vec![*root];
     while let Some(node) = stack.pop() {
         let facts = match kind_of(kinds, &node) {
-            Some(Kind::Switch) => Some(switch_labels(language, &node, source)),
+            Some(Kind::Switch) => Some(switch_labels(language, kinds, &node, source)),
             Some(Kind::Conditional) if !in_chain.contains(&node.id()) => {
                 chain_labels(kinds, &node, source, &mut in_chain)
             }
             _ => None,
         };
         if let Some((labels, last)) = facts {
-            let labels = normalise(&labels);
+            let labels = normalise(&labels, language.case_names_bind);
             if !labels.is_empty() {
                 found.push(SwitchFact {
                     symbol: None,
@@ -264,26 +283,55 @@ pub(crate) fn switches(
     found
 }
 
+/// A switch keeps its cases in a `body`, or directly among its children (Go).
 fn switch_labels<'t>(
     language: &Language,
+    kinds: &[Option<Kind>],
     switch: &Node<'t>,
     source: &[u8],
 ) -> (Vec<String>, Node<'t>) {
     let mut labels = Vec::new();
-    if let Some(body) = switch.child_by_field_name("body") {
-        let mut cursor = body.walk();
-        for case in body.named_children(&mut cursor) {
-            let label = language.case_label_fields.iter().find_map(|name| {
-                case.child_by_field_name(name).or_else(|| {
-                    let mut inner = case.walk();
-                    case.named_children(&mut inner)
-                        .find(|child| child.kind() == *name)
-                })
-            });
-            labels.extend(label.map(|label| text(&label, source).to_owned()));
+    let body = switch.child_by_field_name("body");
+    let cases = body.as_ref().unwrap_or(switch);
+    let mut cursor = cases.walk();
+    for case in cases.named_children(&mut cursor) {
+        if body.is_none() && kind_of(kinds, &case) != Some(Kind::Branch) {
+            continue;
         }
+        labels.extend(case_labels(language, &case, source));
     }
     (labels, *switch)
+}
+
+/// What one case matches: the first of the language's label fields that exists, split into its
+/// parts when it is a list (`case a, b:`, or a type case naming several types).
+fn case_labels(language: &Language, case: &Node, source: &[u8]) -> Vec<String> {
+    let mut cursor = case.walk();
+    let found = language.case_label_fields.iter().find_map(|name| {
+        let fields: Vec<Node> = case.children_by_field_name(name, &mut cursor).collect();
+        if fields.is_empty() {
+            let mut inner = case.walk();
+            case.named_children(&mut inner)
+                .find(|child| child.kind() == *name)
+                .map(|child| vec![child])
+        } else {
+            Some(fields)
+        }
+    });
+    let mut labels = Vec::new();
+    for label in found.unwrap_or_default() {
+        if label.kind().ends_with("_list") {
+            let mut inner = label.walk();
+            labels.extend(
+                label
+                    .named_children(&mut inner)
+                    .map(|part| text(&part, source).to_owned()),
+            );
+        } else if label.is_named() {
+            labels.push(text(&label, source).to_owned());
+        }
+    }
+    labels
 }
 
 /// The constants an `if`/`else if` chain starting at `head` compares one expression with, and
@@ -363,7 +411,7 @@ fn comparison<'a>(
 
 /// Case texts as comparable labels: or-patterns split, payloads and guards cut, catch-alls and
 /// bindings dropped, duplicates removed, sorted.
-fn normalise(cases: &[String]) -> Vec<String> {
+fn normalise(cases: &[String], names_bind: bool) -> Vec<String> {
     let mut labels = BTreeSet::new();
     for case in cases {
         // A quoted literal is one label whatever it contains.
@@ -380,10 +428,16 @@ fn normalise(cases: &[String]) -> Vec<String> {
             let part = if part.starts_with(['"', '\'', '`']) {
                 part
             } else {
-                part.split(['(', '{', '[']).next().unwrap_or(part).trim()
+                // Payloads are cut from patterns only; in an expression `[]int` is the label.
+                if names_bind {
+                    part.split(['(', '{', '[']).next().unwrap_or(part).trim()
+                } else {
+                    part
+                }
             };
             let literal = matches!(part, "true" | "false" | "null" | "undefined" | "nil");
-            let binding = part.starts_with(|c: char| c.is_lowercase() || c == '_')
+            let binding = names_bind
+                && part.starts_with(|c: char| c.is_lowercase() || c == '_')
                 && !part.contains(['.', ':'])
                 && !literal;
             if !part.is_empty() && !binding {
@@ -408,14 +462,23 @@ mod tests {
             "Kind::A",
         ]
         .map(str::to_owned);
-        assert_eq!(normalise(&cases), ["\"go\"", "Kind::A", "Kind::B"]);
+        assert_eq!(normalise(&cases, true), ["\"go\"", "Kind::A", "Kind::B"]);
+    }
+
+    #[test]
+    fn expression_labels_keep_their_brackets_and_lowercase_names() {
+        let cases = ["[]int, map[string]int", "modeOne", "Foo{}"].map(str::to_owned);
+        assert_eq!(
+            normalise(&cases, false),
+            ["Foo{}", "[]int, map[string]int", "modeOne"]
+        );
     }
 
     #[test]
     fn quoted_labels_and_booleans_survive() {
         let cases = ["\"sign|out\"", "\"sign if yes\"", "true", "false"].map(str::to_owned);
         assert_eq!(
-            normalise(&cases),
+            normalise(&cases, true),
             ["\"sign if yes\"", "\"sign|out\"", "false", "true"]
         );
     }

@@ -140,19 +140,34 @@ fn tokens(language: &Language, root: &Node, source: &[u8], kinds: &[Option<Kind>
         let comment = node.is_named() && kinds.get(id).copied().flatten() == Some(Kind::Comment);
         let leaf = node.child_count() == 0;
         if leaf && !comment {
-            let text = hash_bytes(&source[node.start_byte()..node.end_byte()]);
-            let written = mix(text ^ ((id as u64) << 48));
+            let bytes = &source[node.start_byte()..node.end_byte()];
             let class = classes.get(id).copied().unwrap_or(Class::Other);
-            let abstracted = match class {
-                Class::Identifier => 1,
-                Class::Literal => 2,
-                Class::Other => mix(text) | 4,
-            };
-            out.push(Token {
-                written,
-                abstracted,
-                name: (class == Class::Identifier).then_some(text),
-            });
+            if class == Class::Literal && node.start_position().row != node.end_position().row {
+                // A literal spanning lines is content (a template, a script), not a constant:
+                // each of its lines is a token as written, so two functions that only wrap
+                // different ones do not look alike, and the same one edited still does.
+                for line in bytes.split(|&b| b == b'\n') {
+                    let text = hash_bytes(line);
+                    out.push(Token {
+                        written: mix(text ^ ((id as u64) << 48)),
+                        abstracted: mix(text) | 4,
+                        name: None,
+                    });
+                }
+            } else {
+                let text = hash_bytes(bytes);
+                let written = mix(text ^ ((id as u64) << 48));
+                let abstracted = match class {
+                    Class::Identifier => 1,
+                    Class::Literal => 2,
+                    Class::Other => mix(text) | 4,
+                };
+                out.push(Token {
+                    written,
+                    abstracted,
+                    name: (class == Class::Identifier).then_some(text),
+                });
+            }
         }
         if !leaf && !comment && cursor.goto_first_child() {
             continue;
@@ -288,6 +303,35 @@ fn total(items: &[Item], rate: f64) -> f64 { let mut sum = 0.0;
             only("b.rs", other).unwrap(),
         );
         assert!(similarity(&original, &other) < 0.3);
+    }
+
+    #[test]
+    fn functions_that_only_wrap_different_multi_line_templates_do_not_match() {
+        let wrapper = |script: &str| {
+            format!(
+                "func gen(buf io.StringWriter, name string, desc bool) {{\n\tbuf.WriteString(fmt.Sprintf(`{script}`, name, desc, name, desc, name))\n}}\n"
+            )
+        };
+        let script = |word: &str, edited: Option<usize>| {
+            (0..100)
+                .map(|i| {
+                    if edited == Some(i) {
+                        "echo other".to_owned()
+                    } else {
+                        format!("{word} {i}")
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let (bash, zsh) = (script("echo bash", None), script("print zsh", None));
+        let edited = script("echo bash", Some(3));
+        let fingerprint = |text: &str| only("a.go", text).unwrap();
+        let (a, b) = (fingerprint(&wrapper(&bash)), fingerprint(&wrapper(&zsh)));
+        assert!(similarity(&a, &b) < 0.3);
+        // The same template with a line edited is still a near copy.
+        let c = fingerprint(&wrapper(&edited));
+        assert!(similarity(&a, &c) > 0.8);
     }
 
     #[test]

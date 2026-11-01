@@ -32,6 +32,7 @@ pub static PYTHON: Language = Language {
         "(class_definition superclasses: (argument_list [(identifier) @name (attribute attribute: (identifier) @name)])) @reference.implementation",
     ],
     case_label_fields: &["case_pattern"],
+    case_names_bind: true,
     callee_fields: &["function"],
     logging_callees: &[
         "debug",

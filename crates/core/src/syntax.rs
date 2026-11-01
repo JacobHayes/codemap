@@ -247,21 +247,27 @@ fn kind_table(language: &Language) -> Vec<Option<Kind>> {
     table
 }
 
-/// Logging and assertion calls are told apart by the callee's last name.
+/// Logging calls are told apart by the callee's last name; assertions also by its qualifier
+/// (`assert.Equal`, `require.NoError`).
 fn call_concern(language: &Language, node: &Node, source: &[u8]) -> Option<Concern> {
     let callee = language
         .callee_fields
         .iter()
         .find_map(|field| node.child_by_field_name(field))?;
     let text = callee.utf8_text(source).ok()?;
-    let name = text
-        .rsplit(|c: char| !(c.is_alphanumeric() || c == '_'))
-        .find(|part| !part.is_empty())?;
-    if language
+    let mut names = text
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|part| !part.is_empty());
+    let first = names.next()?;
+    let name = names.next_back().unwrap_or(first);
+    let by_name = language
         .assertion_prefixes
         .iter()
-        .any(|prefix| name.starts_with(prefix))
-    {
+        .any(|prefix| name.starts_with(prefix));
+    // A qualifier is an assertion package only when it is exactly one (`assert.Equal`), not
+    // any name that starts like one (`expected.trim()`).
+    let qualified = first != name && language.assertion_prefixes.contains(&first);
+    if by_name || qualified {
         Some(Concern::Assertion)
     } else if language.logging_callees.contains(&name) {
         Some(Concern::Logging)
@@ -286,7 +292,7 @@ fn symbols_and_refs(
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(query, tree.root_node(), source);
     // Keyed by byte range so a definition several patterns match (methods) counts once.
-    let mut definitions: BTreeMap<(usize, usize), (SymbolKind, String, Node, bool)> =
+    let mut definitions: BTreeMap<DefinitionKey, (SymbolKind, String, Node, bool)> =
         BTreeMap::new();
     let mut refs = Vec::new();
     while let Some(found) = matches.next() {
@@ -319,39 +325,60 @@ fn symbols_and_refs(
                 name_node.start_position().row,
             ));
         } else if let Some(kind) = definition_kind(tag, language, &node, source) {
+            let extension = tag.starts_with("extension.");
             definitions
-                .entry((node.start_byte(), node.end_byte()))
-                .or_insert((kind, name.to_owned(), node, tag.starts_with("extension.")));
+                .entry((node.start_byte(), node.end_byte(), extension))
+                .or_insert((kind, name.to_owned(), node, extension));
         }
     }
     let mut ordered: Vec<_> = definitions.into_iter().collect();
-    ordered.sort_by_key(|((start, end), _)| (*start, std::cmp::Reverse(*end)));
+    // An extension that is also a definition (a Go method) comes first, so the definition nests
+    // in it.
+    ordered
+        .sort_by_key(|((start, end, extension), _)| (*start, std::cmp::Reverse(*end), !*extension));
     let (symbols, line_symbols) = nest(language, kinds, source, &ordered, line_count);
     (symbols, refs, line_symbols)
 }
 
-/// One definition found by the tags query, keyed by byte range.
-type Definition<'t> = ((usize, usize), (SymbolKind, String, Node<'t>, bool));
+/// Byte range, and whether it is an extension: a definition and an extension may share a range.
+type DefinitionKey = (usize, usize, bool);
+
+/// One definition found by the tags query.
+type Definition<'t> = (DefinitionKey, (SymbolKind, String, Node<'t>, bool));
 
 /// For each definition that is an extension, the index of the type it continues: the first type
-/// of the same name declared in the same syntax block.
+/// of the same name declared in the same syntax block, else the first earlier extension of that
+/// name there, so a foreign type's methods are one symbol.
 fn merge_targets(ordered: &[Definition]) -> Vec<Option<usize>> {
+    let scope = |node: &Node| node.parent().map(|parent| parent.id());
+    // A declaration may sit in a wrapper that holds nothing else of use (Go's `type (..)`
+    // group), so the scope one level up counts too.
+    let encloses = |found: &Node, node: &Node| {
+        scope(found) == scope(node)
+            || found
+                .parent()
+                .and_then(|wrapper| wrapper.parent())
+                .map(|outer| outer.id())
+                == scope(node)
+    };
     ordered
         .iter()
-        .map(|(_, (_, name, node, extension))| {
-            extension
-                .then(|| {
-                    ordered
-                        .iter()
-                        .position(|(_, (kind, other, found, other_extension))| {
-                            *kind == SymbolKind::Type
-                                && !other_extension
-                                && other == name
-                                && found.parent().map(|parent| parent.id())
-                                    == node.parent().map(|parent| parent.id())
-                        })
-                })
-                .flatten()
+        .enumerate()
+        .map(|(at, (_, (_, name, node, extension)))| {
+            if !extension {
+                return None;
+            }
+            let same = |(kind, other, found, _): &(SymbolKind, String, Node, bool)| {
+                *kind == SymbolKind::Type && other == name && encloses(found, node)
+            };
+            let declared = ordered
+                .iter()
+                .position(|(_, definition)| !definition.3 && same(definition));
+            declared.or_else(|| {
+                ordered[..at]
+                    .iter()
+                    .position(|(_, definition)| definition.3 && same(definition))
+            })
         })
         .collect()
 }
@@ -359,7 +386,7 @@ fn merge_targets(ordered: &[Definition]) -> Vec<Option<usize>> {
 /// Symbols in nesting order. An extension (a Rust `impl` block) that continues a type in the same
 /// scope is not a symbol: its lines belong to that type and its members are the type's children,
 /// so the type is one symbol however many places declare it. An extension with no such type is a
-/// symbol of its own.
+/// symbol of its own, the first of its name.
 fn nest(
     language: &Language,
     kinds: &[Option<Kind>],
@@ -378,7 +405,7 @@ fn nest(
     // The symbol that owns what is declared inside each open range.
     let mut open: Vec<(u32, usize, usize)> = Vec::new();
     let mut line_symbols = vec![None; line_count];
-    for (at, &((start, end), (kind, ref name, node, _))) in ordered.iter().enumerate() {
+    for (at, &((start, end, _), (kind, ref name, node, _))) in ordered.iter().enumerate() {
         while open
             .last()
             .is_some_and(|&(_, top_start, top_end)| !(top_start <= start && end <= top_end))

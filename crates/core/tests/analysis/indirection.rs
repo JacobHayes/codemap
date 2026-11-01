@@ -146,6 +146,28 @@ fn wrappers_in_tests_and_methods_a_trait_demands_are_left_alone() {
     assert!(signal(&index, "pass_through").is_empty());
 }
 
+#[test]
+fn a_go_function_that_only_passes_its_arguments_on_is_a_wrapper() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    write(
+        dir.path(),
+        "src/worker.go",
+        "package src\n\nfunc LoadConfig(path string) string {\n\ttext := strings.TrimSpace(path)\n\tupper := strings.ToUpper(text)\n\treturn upper + text\n}\n",
+    );
+    write(
+        dir.path(),
+        "src/api.go",
+        "package src\n\nfunc ReadConfig(path string) string {\n\treturn LoadConfig(path)\n}\n\nfunc (c *Client) Fetch(path string) string {\n\tLoadConfig(path)\n}\n\nfunc Shown(path string) string {\n\treturn LoadConfig(path + \"x\")\n}\n\nfunc Send(ch chan string, path string) {\n\tch <- LoadConfig(path)\n}\n\nfunc Spawn(path string) {\n\tgo LoadConfig(path)\n}\n\nfunc Later(path string) {\n\tdefer LoadConfig(path)\n}\n",
+    );
+    let index = indexed(dir.path());
+    let found = signal(&index, "pass_through");
+    // `ReadConfig` and `Fetch` forward; `Shown` computes its argument, and sending, spawning
+    // or deferring the call is more than passing it on.
+    assert_eq!(found.len(), 2);
+    assert!(found.iter().all(|finding| finding.area == "src/api.go"));
+}
+
 fn implementation(kind: &str) -> Vec<(&'static str, String)> {
     match kind {
         "rust" => vec![
@@ -156,6 +178,10 @@ fn implementation(kind: &str) -> Vec<(&'static str, String)> {
             ("src/store.ts", "export interface Store {\n  put(key: number): void;\n}\n".to_owned()),
             ("src/sql.ts", "export class SqlStore implements Store {\n  put(key: number): void {\n    const next = key + 1;\n    console.log(next);\n  }\n}\n".to_owned()),
         ],
+        "go" => vec![
+            ("src/store.go", "package src\n\ntype Store interface {\n\tPut(key int)\n}\n".to_owned()),
+            ("src/sql.go", "package src\n\ntype SqlStore struct {\n\tStore\n}\n\nfunc (s *SqlStore) Put(key int) {\n\tnext := key + 1\n\t_ = next\n}\n".to_owned()),
+        ],
         _ => vec![
             ("src/store.py", "from abc import ABC, abstractmethod\n\nclass Store(ABC):\n    @abstractmethod\n    def put(self, key): ...\n".to_owned()),
             ("src/sql.py", "from store import Store\n\nclass SqlStore(Store):\n    def put(self, key):\n        return key + 1\n".to_owned()),
@@ -165,7 +191,7 @@ fn implementation(kind: &str) -> Vec<(&'static str, String)> {
 
 #[test]
 fn an_abstraction_with_one_implementor_is_flagged_in_each_language() {
-    for kind in ["rust", "typescript", "python"] {
+    for kind in ["rust", "typescript", "python", "go"] {
         let dir = tempfile::tempdir().unwrap();
         baseline(dir.path(), 5);
         for (path, text) in implementation(kind) {

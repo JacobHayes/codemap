@@ -386,3 +386,215 @@ fn rust_impl_blocks_continue_the_type_in_their_scope() {
         .unwrap();
     assert_eq!(owner, "Early");
 }
+
+#[test]
+fn go_lines_carry_role_and_concern() {
+    let tree = tree_of("go");
+    index(tree.path()).unwrap();
+    let at = |number| kinds(tree.path(), "greeter.go", number);
+    assert_eq!(at(1), pair("prod", "comment"));
+    assert_eq!(at(4), pair("prod", "import"));
+    assert_eq!(at(16), pair("prod", "core"));
+    assert_eq!(at(17), pair("prod", "logging"));
+    assert_eq!(at(18), pair("prod", "core"));
+    // The block under `if err != nil` is handling, and the log call inside it is logging.
+    assert_eq!(at(19), pair("prod", "handler"));
+    assert_eq!(at(20), pair("prod", "logging"));
+    assert_eq!(at(21), pair("prod", "handler"));
+    assert_eq!(at(22), pair("prod", "handler"));
+    assert_eq!(at(23), pair("prod", "core"));
+}
+
+#[test]
+fn go_methods_join_their_receiver_type_and_interfaces_are_types() {
+    let tree = tree_of("go");
+    index(tree.path()).unwrap();
+    let found: Vec<_> = symbols(tree.path(), "greeter.go").into_iter().collect();
+    let entry = |name: &str, kind: &str, parent: Option<&str>, first, last| {
+        (
+            name.to_owned(),
+            kind.to_owned(),
+            parent.map(str::to_owned),
+            first,
+            last,
+        )
+    };
+    assert_eq!(
+        found,
+        vec![
+            entry("Greeter", "type", None, 7, 9),
+            entry("Namer", "type", None, 11, 13),
+            entry("Greet", "function", Some("Greeter"), 15, 24),
+            entry("render", "function", None, 26, 28),
+            entry("Shout", "function", Some("Greeter"), 30, 37),
+        ]
+    );
+    // An interface exists to be implemented.
+    let abstraction: bool = crate::common::open(tree.path())
+        .query_row(
+            "SELECT abstraction FROM symbols WHERE path = 'greeter.go' AND name = 'Namer'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(abstraction);
+}
+
+#[test]
+fn go_methods_of_a_type_declared_elsewhere_or_in_a_group_share_one_symbol_per_type() {
+    let tree = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tree.path().join("a.go"),
+        "package a\n\nfunc (c *Command) Run() {}\n\nfunc (c Command) Stop() {}\n\nfunc (s *Set[K]) Add() {}\n",
+    )
+    .unwrap();
+    index(tree.path()).unwrap();
+    let found: Vec<_> = symbols(tree.path(), "a.go")
+        .into_iter()
+        .map(|(name, kind, parent, ..)| (name, kind, parent))
+        .collect();
+    let entry = |name: &str, kind: &str, parent: Option<&str>| {
+        (name.to_owned(), kind.to_owned(), parent.map(str::to_owned))
+    };
+    assert_eq!(
+        found,
+        vec![
+            entry("Command", "type", None),
+            entry("Run", "function", Some("Command")),
+            entry("Stop", "function", Some("Command")),
+            entry("Set", "type", None),
+            entry("Add", "function", Some("Set")),
+        ]
+    );
+}
+
+#[test]
+fn go_test_functions_and_grouped_types() {
+    let tree = tree_of("go");
+    index(tree.path()).unwrap();
+    let found: Vec<_> = symbols(tree.path(), "greeter_test.go")
+        .into_iter()
+        .map(|(name, kind, ..)| (name, kind))
+        .collect();
+    assert_eq!(
+        found,
+        vec![
+            ("TestGreet".to_owned(), "test".to_owned()),
+            ("helper".to_owned(), "function".to_owned()),
+            ("TestAsserts".to_owned(), "test".to_owned()),
+        ]
+    );
+    // Calls qualified by an assertion package are assertions.
+    assert_eq!(
+        line(tree.path(), "greeter_test.go", 15),
+        pair("test", "assertion")
+    );
+    assert_eq!(
+        line(tree.path(), "greeter_test.go", 16),
+        pair("test", "assertion")
+    );
+    // A type declared in a group is still one symbol with its methods.
+    let grouped: Vec<_> = symbols(tree.path(), "hook.go")
+        .into_iter()
+        .map(|(name, kind, parent, ..)| (name, kind, parent))
+        .collect();
+    let entry = |name: &str, kind: &str, parent: Option<&str>| {
+        (name.to_owned(), kind.to_owned(), parent.map(str::to_owned))
+    };
+    assert_eq!(
+        grouped,
+        vec![
+            entry("Hook", "type", None),
+            entry("Run", "function", Some("Hook")),
+            entry("Alpha", "type", None),
+            entry("Beta", "type", None),
+            entry("A", "function", Some("Alpha")),
+            entry("B", "function", Some("Beta")),
+        ]
+    );
+}
+
+#[test]
+fn go_paths_and_headers_decide_roles() {
+    let tree = tree_of("go");
+    index(tree.path()).unwrap();
+    let connection = crate::common::open(tree.path());
+    let mut statement = connection
+        .prepare("SELECT path, role FROM files ORDER BY path")
+        .unwrap();
+    let roles: Vec<(String, String)> = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    let roles: Vec<_> = roles
+        .iter()
+        .map(|(p, r)| (p.as_str(), r.as_str()))
+        .collect();
+    assert_eq!(
+        roles,
+        vec![
+            ("api.pb.go", "generated"),
+            ("go.mod", "config"),
+            ("greeter.go", "prod"),
+            ("greeter_test.go", "test"),
+            ("hook.go", "prod"),
+            ("table_gen.go", "generated"),
+            ("testdata/sample.go", "test"),
+            ("vendor/dep/dep.go", "vendored"),
+        ]
+    );
+}
+
+#[test]
+fn go_aliases_are_types_and_the_generated_header_is_a_go_convention() {
+    let tree = tempfile::tempdir().unwrap();
+    let licence = "// Licence line.\n".repeat(8);
+    let header = format!("{licence}// Code generated by tool. DO NOT EDIT.\n\npackage a\n");
+    std::fs::write(tree.path().join("schema.go"), &header).unwrap();
+    std::fs::write(
+        tree.path().join("alias.go"),
+        "package a\n\ntype Alias = Original\n\nfunc (a Alias) Name() string { return \"\" }\n",
+    )
+    .unwrap();
+    // The same line inside another language's string is not a marker.
+    std::fs::write(
+        tree.path().join("emit.rs"),
+        format!("const GO: &str = r#\"{licence}// Code generated by tool. DO NOT EDIT.\n\"#;\n"),
+    )
+    .unwrap();
+    index(tree.path()).unwrap();
+    assert_eq!(
+        line(tree.path(), "schema.go", 10),
+        pair("generated", "core")
+    );
+    assert_eq!(line(tree.path(), "emit.rs", 1), pair("prod", "core"));
+    let found: Vec<_> = symbols(tree.path(), "alias.go")
+        .into_iter()
+        .map(|(name, kind, parent, ..)| (name, kind, parent))
+        .collect();
+    assert_eq!(
+        found,
+        vec![
+            ("Alias".to_owned(), "type".to_owned(), None),
+            (
+                "Name".to_owned(),
+                "function".to_owned(),
+                Some("Alias".to_owned())
+            ),
+        ]
+    );
+}
+
+#[test]
+fn assertion_packages_count_by_name_and_other_receivers_do_not() {
+    let tree = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tree.path().join("a.ts"),
+        "assert.equal(a, b);\nexpected.trim();\n",
+    )
+    .unwrap();
+    index(tree.path()).unwrap();
+    assert_eq!(line(tree.path(), "a.ts", 1), pair("prod", "assertion"));
+    assert_eq!(line(tree.path(), "a.ts", 2), pair("prod", "core"));
+}

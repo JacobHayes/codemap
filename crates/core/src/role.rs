@@ -15,7 +15,16 @@ const GENERATED_DIRS: &[&str] = &["dist", "__snapshots__"];
 /// source maps.
 const GENERATED_EXTENSIONS: &[&str] = &["lock", "snap", "golden", "map"];
 /// Minified bundles.
-const GENERATED_SUFFIXES: &[&str] = &[".min.js", ".min.css", ".min.mjs"];
+const GENERATED_SUFFIXES: &[&str] = &[
+    ".min.js",
+    ".min.css",
+    ".min.mjs",
+    ".pb.go",
+    ".pb.gw.go",
+    "_gen.go",
+    ".gen.go",
+    "_generated.go",
+];
 const TEST_DIRS: &[&str] = &[
     "tests",
     "test",
@@ -44,7 +53,15 @@ const CONFIG_EXTENSIONS: &[&str] = &[
     "env",
     "properties",
 ];
-const LOCK_FILES: &[&str] = &["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "go.sum"];
+const LOCK_FILES: &[&str] = &[
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "go.sum",
+    "go.work.sum",
+];
+/// Manifests with no config extension.
+const CONFIG_FILES: &[&str] = &["go.mod", "go.work"];
 /// Markers of generated code, matched case-insensitively in the first lines of a file.
 const GENERATED_MARKERS: &[&str] = &[
     "@generated",
@@ -55,6 +72,9 @@ const GENERATED_MARKERS: &[&str] = &[
 ];
 /// Generators put their marker in the header; later lines are the file's own.
 const GENERATED_HEAD_LINES: usize = 5;
+
+/// How far into a file the Go generated-code header is looked for.
+const GO_HEADER_LINES_MAX: usize = 100;
 
 /// The role a file has by where it lives and what its first lines say.
 #[must_use]
@@ -78,6 +98,7 @@ pub fn role_for_path(path: &str, language: Option<&Language>, text: &str) -> Rol
             .any(|suffix| file.to_ascii_lowercase().ends_with(suffix))
         || LOCK_FILES.contains(&file)
         || has_generated_marker(text)
+        || (language.is_some_and(|language| language.name == "go") && has_go_generated_header(text))
     {
         Role::Generated
     } else if in_dir(TEST_DIRS) || is_test_file(file, stem, language) {
@@ -90,7 +111,7 @@ pub fn role_for_path(path: &str, language: Option<&Language>, text: &str) -> Rol
         Role::Script
     } else if in_dir(DOCS_DIRS) || DOCS_EXTENSIONS.contains(&extension) {
         Role::Docs
-    } else if CONFIG_EXTENSIONS.contains(&extension) {
+    } else if CONFIG_EXTENSIONS.contains(&extension) || CONFIG_FILES.contains(&file) {
         Role::Config
     } else {
         Role::Prod
@@ -122,6 +143,18 @@ fn is_test_file(file: &str, stem: &str, language: Option<&Language>) -> bool {
         || matches!(stem, "conftest" | "test" | "tests")
         || file.contains(".test.")
         || file.contains(".spec.")
+}
+
+/// Go's convention for generated files: a line `// Code generated ... DO NOT EDIT.` anywhere
+/// before the package clause (looked for in Go files only: other languages may carry such a line
+/// inside a string), often below a licence header too long for the marker window.
+fn has_go_generated_header(text: &str) -> bool {
+    text.lines()
+        .take(GO_HEADER_LINES_MAX)
+        .take_while(|line| !line.starts_with("package "))
+        .any(|line| {
+            line.starts_with("// Code generated ") && line.trim_end().ends_with("DO NOT EDIT.")
+        })
 }
 
 fn has_generated_marker(text: &str) -> bool {
