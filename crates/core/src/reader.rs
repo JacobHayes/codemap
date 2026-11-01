@@ -1,6 +1,6 @@
 //! A read handle on the index, and the aggregates every query and detector is built from.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
@@ -243,6 +243,26 @@ impl Index {
             lines.entry(path).or_default().push(line);
         }
         Ok(Touched { lines })
+    }
+
+    /// The lines inside open findings' evidence that pass the filter, by file.
+    pub(crate) fn flagged_lines(
+        &self,
+        filter: &Filter,
+    ) -> Result<BTreeMap<String, BTreeSet<u32>>, QueryError> {
+        let (condition, bound) = filter.sql();
+        let mut statement = self.store.connection().prepare(&format!(
+            "SELECT path, line FROM line_facts WHERE flagged = 1 AND {condition}"
+        ))?;
+        let rows = statement.query_map(params_from_iter(bound.iter()), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })?;
+        let mut lines: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
+        for row in rows {
+            let (path, line) = row?;
+            lines.entry(path).or_default().insert(line);
+        }
+        Ok(lines)
     }
 
     /// Term sums per file, for files that have lines passing the filter.

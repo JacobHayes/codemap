@@ -1,6 +1,6 @@
 //! The `findings` and `areas` tables.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use duckdb::params;
 
@@ -24,7 +24,8 @@ impl Index {
         areas: &[Area],
     ) -> Result<(), QueryError> {
         let connection = self.store().connection();
-        connection.execute_batch("DELETE FROM findings; DELETE FROM areas;")?;
+        connection
+            .execute_batch("DELETE FROM findings; DELETE FROM areas; DELETE FROM flagged;")?;
         let mut finding_rows = connection.appender("findings")?;
         for finding in findings {
             finding_rows.append_row(params![
@@ -60,6 +61,35 @@ impl Index {
             ])?;
         }
         area_rows.flush()?;
+        drop(area_rows);
+        // The lines of every open finding's evidence, once each: what `finding_lines` sums. A
+        // finding with no evidence (a rule on a file or directory) covers everything under its
+        // area.
+        let mut flagged: BTreeSet<(String, u32)> = BTreeSet::new();
+        let mut under = connection
+            .prepare("SELECT path, line FROM lines WHERE path = ?1 OR starts_with(path, ?2)")?;
+        for finding in findings.iter().filter(|f| f.acknowledged.is_none()) {
+            for e in &finding.evidence {
+                for line in e.start_line..=e.end_line {
+                    flagged.insert((e.path.clone(), line));
+                }
+            }
+            if finding.evidence.is_empty() {
+                let area = finding.area.trim_end_matches('/');
+                let rows = under.query_map(params![area, format!("{area}/")], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+                })?;
+                for row in rows {
+                    flagged.insert(row?);
+                }
+            }
+        }
+        drop(under);
+        let mut flagged_rows = connection.appender("flagged")?;
+        for (path, line) in flagged {
+            flagged_rows.append_row(params![path, line])?;
+        }
+        flagged_rows.flush()?;
         Ok(())
     }
 

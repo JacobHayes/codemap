@@ -81,7 +81,11 @@ your session.
 2. `codemap area <subject> --json`: the findings, evidence (line ranges) and related areas
    for one file or directory, or one group id, exactly as `areas` printed it. A group (copies,
    a naming family, a repeated switch) is one area however many files it spans; asking for a
-   file or directory also lists the groups it belongs to and its share of each.
+   file or directory also lists the groups it belongs to and its share of each, and every open
+   area with evidence inside it (`touching`, with the lines there). `codemap tree --color
+   finding_share` colours files and folders by the share of their lines inside open findings
+   (`finding_lines` is the count), so a pattern spread over many
+   files shows on every one.
    `codemap source <path> --lines a-b` shows those lines with role, concern and the findings
    touching them (long files come in pages; it says how to ask for the next).
    `codemap xtab --rows role --cols concern` crosses two dimensions (role, concern, language,

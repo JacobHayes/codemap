@@ -121,6 +121,8 @@ pub enum Base {
     Nodes,
     /// Lines of the copies beyond the largest in each group of duplicates.
     DuplicatedLines,
+    /// Lines inside the evidence of any open (not acknowledged) finding, each counted once.
+    FindingLines,
 }
 
 impl Base {
@@ -132,6 +134,7 @@ impl Base {
             Self::Tokens => "tokens",
             Self::Nodes => "syntax nodes",
             Self::DuplicatedLines => "duplicated lines",
+            Self::FindingLines => "lines in findings",
         }
     }
 
@@ -141,6 +144,7 @@ impl Base {
             Self::Tokens => "tokens",
             Self::Nodes => "nodes",
             Self::DuplicatedLines => "duplicated",
+            Self::FindingLines => "flagged",
         }
     }
 }
@@ -228,6 +232,29 @@ impl Measure {
         }
     }
 
+    /// Whether the measure sums lines that the findings themselves mark, so it exists only after
+    /// detection and cannot feed a detector.
+    #[must_use]
+    pub fn from_findings(&self) -> bool {
+        self.terms()
+            .iter()
+            .any(|term| term.base == Base::FindingLines)
+    }
+
+    /// Whether a value of zero says nothing was found, so it takes the plain fill rather than a
+    /// scale step: a ratio of zero, or no line in any finding.
+    #[must_use]
+    pub fn zero_is_plain(&self) -> bool {
+        matches!(
+            self,
+            Self::Ratio { .. }
+                | Self::Sum {
+                    base: Base::FindingLines,
+                    ..
+                }
+        )
+    }
+
     /// A ratio of two sums, rather than a sum.
     #[must_use]
     pub fn is_ratio(&self) -> bool {
@@ -266,6 +293,7 @@ fn term(dimension: &str, value: &str) -> Term {
 
 /// The common measures, by name.
 #[must_use]
+#[expect(clippy::too_many_lines, reason = "one flat list of named measures")]
 pub fn catalog() -> Vec<MeasureDef> {
     let def = |name: &str, description: &str, measure| MeasureDef {
         name: name.to_owned(),
@@ -284,6 +312,19 @@ pub fn catalog() -> Vec<MeasureDef> {
             "duplicated_lines",
             "Lines of copies beyond the largest in each group of duplicates",
             sum(Base::DuplicatedLines, "", ""),
+        ),
+        def(
+            "finding_lines",
+            "Lines in the evidence of open findings, each counted once",
+            sum(Base::FindingLines, "", ""),
+        ),
+        def(
+            "finding_share",
+            "Share of lines inside the evidence of open findings",
+            Measure::Ratio {
+                numerator: Term::new(Base::FindingLines, Filter::default()),
+                denominator: Term::new(Base::Lines, Filter::default()),
+            },
         ),
         def(
             "handler_lines",

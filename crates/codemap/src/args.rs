@@ -245,6 +245,7 @@ impl AreaArgs {
     pub fn query(self) -> Query {
         Query::Area {
             subject: self.subject,
+            filter: None,
         }
     }
 }

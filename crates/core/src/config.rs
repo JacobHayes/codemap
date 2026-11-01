@@ -33,6 +33,10 @@ pub enum ConfigError {
     },
     #[error("rule {rule:?} uses the unknown measure {measure:?}")]
     UnknownMeasure { rule: String, measure: String },
+    #[error(
+        "rule {rule:?} uses {measure:?}, which is computed from the findings the rules help produce"
+    )]
+    FindingMeasure { rule: String, measure: String },
     #[error("rule {rule:?} needs at_least or at_most")]
     NoThreshold { rule: String },
     #[error(
@@ -169,8 +173,14 @@ impl Config {
 
     fn validate(&self) -> Result<(), ConfigError> {
         for rule in &self.rules {
-            if measure::named(&rule.measure).is_none() {
+            let Some(measure) = measure::named(&rule.measure) else {
                 return Err(ConfigError::UnknownMeasure {
+                    rule: rule.name.clone(),
+                    measure: rule.measure.clone(),
+                });
+            };
+            if measure.from_findings() {
+                return Err(ConfigError::FindingMeasure {
                     rule: rule.name.clone(),
                     measure: rule.measure.clone(),
                 });
@@ -274,5 +284,19 @@ mod tests {
                 Err(ConfigError::AcknowledgementTarget { .. })
             ));
         }
+    }
+
+    #[test]
+    fn a_rule_cannot_use_a_measure_computed_from_findings() {
+        let rule = |measure: &str| {
+            format!(
+                "[[rule]]\nname = \"r\"\nmeasure = \"{measure}\"\nper = \"file\"\nat_most = 1\n"
+            )
+        };
+        assert!(load(&rule("test_lines")).is_ok());
+        assert!(matches!(
+            load(&rule("finding_lines")),
+            Err(ConfigError::FindingMeasure { .. })
+        ));
     }
 }

@@ -88,6 +88,7 @@ pub fn findings_of(index: &Index, detector: &str) -> Vec<codemap_core::Finding> 
                 index,
                 &Query::Area {
                     subject: area.subject.clone(),
+                    filter: None,
                 },
             ) {
                 Answer::Area(detail) => detail.findings,

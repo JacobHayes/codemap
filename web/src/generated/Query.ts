@@ -8,7 +8,7 @@ export type Axis = "role" | "concern" | "language" | "kind" | "path";
 /**
  * What is counted per line.
  */
-export type Base = "lines" | "tokens" | "nodes" | "duplicated_lines";
+export type Base = "lines" | "tokens" | "nodes" | "duplicated_lines" | "finding_lines";
 
 /**
  * Narrows lines on any dimension. Every field that is set must match.
@@ -78,7 +78,13 @@ filter: Filter, } | { "kind": "area",
  * A file or directory path (a `path::function` subject names its file), or a group's
  * id.
  */
-subject: string, } | { "kind": "source", 
+subject: string, 
+/**
+ * Narrows the lines `touching` counts, as it narrows a map's colour: the population of
+ * the filter, generated and vendored lines left out unless it includes them. Its path
+ * is ignored; the subject says where.
+ */
+filter?: Filter, } | { "kind": "source", 
 /**
  * Relative to the root.
  */

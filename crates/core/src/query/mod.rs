@@ -7,7 +7,7 @@ mod source;
 mod tree;
 mod xtab;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -22,7 +22,7 @@ use codemap_lang::{Concern, LANGUAGES, Role};
 pub use overview::{AreaCounts, DetectorCount, Overview, Share, Totals};
 pub use scale::{SCALE_STEPS, Scale, Spacing};
 pub use source::{SOURCE_LINES_MAX, Source, SourceFinding, SourceLine};
-pub use tree::{DEPTH_DEFAULT, Hierarchy, SizeInfo, Tree, TreeNode};
+pub use tree::{DEPTH_DEFAULT, Hierarchy, RatioParts, SizeInfo, Tree, TreeNode};
 pub use xtab::{Axis, PATH_DEPTH_DEFAULT, Xtab, XtabCell, XtabHeader};
 
 /// The schema name and version every serialized answer carries.
@@ -91,6 +91,11 @@ pub enum Query {
         /// A file or directory path (a `path::function` subject names its file), or a group's
         /// id.
         subject: String,
+        /// Narrows the lines `touching` counts, as it narrows a map's colour: the population of
+        /// the filter, generated and vendored lines left out unless it includes them. Its path
+        /// is ignored; the subject says where.
+        #[serde(default)]
+        filter: Option<Filter>,
     },
     /// One file's lines with their role and concern, and the finding ranges that touch them.
     Source {
@@ -119,6 +124,18 @@ pub struct AreaDetail {
     pub related: Vec<Area>,
     /// For a file or directory: the groups with a member in it, best first.
     pub groups: Vec<GroupShare>,
+    /// For a file or directory: every open area with evidence inside it, most lines first.
+    pub touching: Vec<AreaShare>,
+}
+
+/// An open area and the lines of its evidence that lie inside a location.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "Answer.ts")]
+pub struct AreaShare {
+    pub area: Area,
+    /// The area's evidence lines inside the location, each counted once.
+    pub lines: u32,
 }
 
 /// A group touching a location, and how much of the group lies there.
@@ -242,7 +259,9 @@ pub fn answer(index: &Index, query: &Query) -> Result<Answer, QueryError> {
             detector,
             filter,
         } => areas(index, *top, detector.as_deref(), filter),
-        Query::Area { subject } => area(index, subject).map(Answer::Area),
+        Query::Area { subject, filter } => {
+            area(index, subject, &filter.clone().unwrap_or_default()).map(Answer::Area)
+        }
         Query::Catalog => Ok(Answer::Catalog(catalog())),
     }
 }
@@ -460,7 +479,7 @@ fn lines_filtered(filter: &Filter) -> bool {
         || filter.symbol_kind.is_some()
 }
 
-fn area(index: &Index, subject: &str) -> Result<AreaDetail, QueryError> {
+fn area(index: &Index, subject: &str, filter: &Filter) -> Result<AreaDetail, QueryError> {
     let all = index.areas()?;
     if subject.starts_with(GROUP_ID_PREFIX) {
         return group_detail(index, subject, all);
@@ -471,7 +490,8 @@ fn area(index: &Index, subject: &str) -> Result<AreaDetail, QueryError> {
         .trim_matches('/');
     let found = all.iter().find(|area| area.subject == path).cloned();
     let groups = groups_touching(index, path, &all)?;
-    if found.is_none() && groups.is_empty() {
+    let touching = areas_touching(index, path, filter, &all)?;
+    if found.is_none() && groups.is_empty() && touching.is_empty() {
         return Err(QueryError::UnknownArea(subject.to_owned()));
     }
     let related = all
@@ -487,6 +507,7 @@ fn area(index: &Index, subject: &str) -> Result<AreaDetail, QueryError> {
         area: found,
         related,
         groups,
+        touching,
     })
 }
 
@@ -512,6 +533,7 @@ fn group_detail(index: &Index, id: &str, all: Vec<Area>) -> Result<AreaDetail, Q
         findings,
         related,
         groups: Vec::new(),
+        touching: Vec::new(),
     })
 }
 
@@ -548,6 +570,60 @@ fn groups_touching(index: &Index, path: &str, all: &[Area]) -> Result<Vec<GroupS
         }
     }
     shares.sort_by_key(|share| share.group.rank);
+    Ok(shares)
+}
+
+/// The open areas with evidence inside `path` on lines that pass `filter`, and how many distinct
+/// lines of it lie there: the areas whose findings `finding_lines` counts on the map.
+fn areas_touching(
+    index: &Index,
+    path: &str,
+    filter: &Filter,
+    all: &[Area],
+) -> Result<Vec<AreaShare>, QueryError> {
+    validate(filter)?;
+    let flagged = index.flagged_lines(&Filter {
+        path: Some(path.to_owned()),
+        ..filter.clone()
+    })?;
+    let mut inside: BTreeMap<String, BTreeSet<(&str, u32)>> = BTreeMap::new();
+    let findings = index.all_findings()?;
+    for finding in findings.iter().filter(|f| f.acknowledged.is_none()) {
+        if finding.evidence.is_empty() {
+            // No evidence: everything under its area.
+            let area = finding.area.trim_end_matches('/');
+            let prefix = format!("{area}/");
+            for (file, lines) in &flagged {
+                if file == area || file.starts_with(&prefix) {
+                    inside
+                        .entry(finding.area.clone())
+                        .or_default()
+                        .extend(lines.iter().map(|line| (file.as_str(), *line)));
+                }
+            }
+        }
+        for e in &finding.evidence {
+            let Some(lines) = flagged.get(&e.path) else {
+                continue;
+            };
+            inside.entry(finding.area.clone()).or_default().extend(
+                lines
+                    .range(e.start_line..=e.end_line)
+                    .map(|line| (e.path.as_str(), *line)),
+            );
+        }
+    }
+    let mut shares: Vec<AreaShare> = all
+        .iter()
+        .filter_map(|area| {
+            let lines = u32::try_from(inside.get(&area.subject)?.len()).unwrap_or(u32::MAX);
+            (lines > 0).then(|| AreaShare {
+                area: area.clone(),
+                lines,
+            })
+        })
+        .collect();
+    shares.sort_by(|a, b| b.lines.cmp(&a.lines).then(a.area.rank.cmp(&b.area.rank)));
     Ok(shares)
 }
 

@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS embeddings (content_hash VARCHAR, model VARCHAR, vect
 CREATE TABLE IF NOT EXISTS answers (
     hash_a VARCHAR, hash_b VARCHAR, model VARCHAR, prompt VARCHAR, probability DOUBLE);
 CREATE TABLE IF NOT EXISTS duplicated (path VARCHAR, line UINTEGER);
+CREATE TABLE IF NOT EXISTS flagged (path VARCHAR, line UINTEGER);
 CREATE TABLE IF NOT EXISTS findings (
     detector VARCHAR, subject VARCHAR, subject_kind VARCHAR, area VARCHAR, reason VARCHAR,
     mass_lines DOUBLE, confidence DOUBLE, measures VARCHAR, labels VARCHAR, facts VARCHAR, evidence VARCHAR,
@@ -48,9 +49,11 @@ CREATE TABLE IF NOT EXISTS areas (
     acknowledged VARCHAR);
 CREATE OR REPLACE VIEW line_facts AS
     SELECT l.path, l.line, l.tokens, l.nodes, l.role, l.concern, l.symbol, f.language,
-           s.kind AS symbol_kind, CAST(d.line IS NOT NULL AS UINTEGER) AS duplicated
+           s.kind AS symbol_kind, CAST(d.line IS NOT NULL AS UINTEGER) AS duplicated,
+           CAST(g.line IS NOT NULL AS UINTEGER) AS flagged
     FROM lines l JOIN files f ON f.path = l.path LEFT JOIN symbols s ON s.id = l.symbol
-         LEFT JOIN duplicated d ON d.path = l.path AND d.line = l.line;
+         LEFT JOIN duplicated d ON d.path = l.path AND d.line = l.line
+         LEFT JOIN flagged g ON g.path = l.path AND g.line = l.line;
 ";
 
 /// Separates the labels of a switch in `switches.labels`: a control character no label holds.
@@ -59,9 +62,10 @@ pub(crate) const LABEL_SEPARATOR: &str = "\u{1f}";
 /// Tables holding per-file rows, keyed by `path`.
 const FILE_TABLES: [&str; 5] = ["lines", "symbols", "refs", "switches", "files"];
 /// Tables the analyses and detectors rewrite from the whole index.
-const DERIVED_TABLES: [&str; 6] = [
+const DERIVED_TABLES: [&str; 7] = [
     "similar",
     "duplicated",
+    "flagged",
     "edges",
     "measures",
     "findings",

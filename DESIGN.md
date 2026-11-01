@@ -37,8 +37,8 @@ is one `light-dark(light, dark)` declaration; light and dark are both native and
 - **Neutrals** are steps of one cool ramp; every role picks a step.
 - **Measure scale.** One sequential scale serves magnitudes and ratios alike, running from the
   neutral ramp to a warm amber, so a higher value is always warmer and the low end stays quiet.
-  A ratio of zero (no tests, no handling) is not a finding: like a value with no colour it is the
-  plain neutral fill, never a scale step. It never uses the accent's blue, so a selection always
+  A ratio of zero (no tests, no handling) or a file with no line in any open finding is not a
+  finding: like a value with no colour it is the plain neutral fill, never a scale step. It never uses the accent's blue, so a selection always
   stands out on a map. It is defined in OKLCH with even lightness steps and reads in both themes.
   The scale is generated from one definition shared by the canvases and their legends.
 - **Categorical colours** are few and used only for role or concern, where the category is the
@@ -98,7 +98,9 @@ self-hosted.
   few levels below the current root are drawn; deeper levels aggregate into their ancestor until
   you drill in. Area is the size measure; fill is the colour measure on its scale. A tile big
   enough shows its name and value at the 12px floor; smaller tiles show nothing. Hover outlines
-  the tile and names its path; click selects; double-click drills into a folder or opens a file's source.
+  the tile and names its path; when the colour is the share of lines in open findings (the tooltip says "26 of 514 lines"), the tooltip and
+  the selection list the areas touching the tile (groups included) with the lines each has
+  there, and the selection's entries link to the areas; click selects; double-click drills into a folder or opens a file's source.
 - **Cross-tab heatmap.** Rows and columns are dimension values ordered by their totals; cells
   use the measure scale with the value printed where it fits. Margins show row and column
   totals. Clicking a cell opens the map filtered by both of its values (the grid would shrink

@@ -58,7 +58,11 @@ related: Array<Area>,
 /**
  * For a file or directory: the groups with a member in it, best first.
  */
-groups: Array<GroupShare>, };
+groups: Array<GroupShare>, 
+/**
+ * For a file or directory: every open area with evidence inside it, most lines first.
+ */
+touching: Array<AreaShare>, };
 
 /**
  * The ranked areas under a filter.
@@ -72,6 +76,15 @@ matching: number,
  * Matching areas that are acknowledged; they rank after the rest.
  */
 acknowledged: number, areas: Array<Area>, };
+
+/**
+ * An open area and the lines of its evidence that lie inside a location.
+ */
+export type AreaShare = { area: Area, 
+/**
+ * The area's evidence lines inside the location, each counted once.
+ */
+lines: number, };
 
 export type Catalog = { dimensions: Array<Dimension>, measures: Array<MeasureDef>, detectors: Array<DetectorInfo>, };
 
@@ -176,6 +189,11 @@ export type Overview = { totals: Totals, byRole: Array<Share>, byConcern: Array<
  * what it found.
  */
 semantic: string, };
+
+/**
+ * The two sums a ratio colour divides.
+ */
+export type RatioParts = { numerator: number, denominator: number, };
 
 /**
  * What the legend needs: the measure, the range, and where each bin starts.
@@ -286,6 +304,10 @@ kind: string,
  * The file or directory this node is, or contains the symbol it is.
  */
 path: string, 
+/**
+ * For a ratio colour, its numerator and denominator over the whole subtree.
+ */
+colorParts: RatioParts | null, 
 /**
  * Rows cut off below this node by the depth limit.
  */

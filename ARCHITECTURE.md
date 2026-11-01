@@ -126,7 +126,9 @@ erDiagram
 - **`similar`** pairs symbols with a kind (exact, near, semantic) and a score: enough pairs to
   connect each cluster of copies, not every pair inside it. **`duplicated`** marks the lines of
   every copy but the longest in each cluster, which is what the `duplicated_lines` base measure
-  sums.
+  sums. **`flagged`** marks the lines inside the evidence of every open (not acknowledged)
+  finding, each once, which is what the `finding_lines` base measure sums: a group spread over
+  nine files warms all nine.
 - **`labels`** and **`measures`** (subject, key, value) are open tables: an analysis adds a
   dimension or measure by writing rows, not columns.
 - **`findings`** and **`areas`**: see Detectors.
@@ -206,6 +208,12 @@ An **area** is a subject with one or more findings, and its subject is either:
   every member's file and line ranges, its mass is the group's lines (duplicated lines for
   copies, the members' distinct lines otherwise), and its title says what the pattern is and
   how many places and files it spans. One detector found it, so it ranks on its mass.
+
+The map shows it too: `finding_lines` counts, per file and summed per directory, the lines
+inside any open finding's evidence once, and its ratio `finding_share` divides that by the
+tile's lines (a directory by its own lines, not the mean of its children), so colour shows where
+findings concentrate rather than where code is big. The map stays place-shaped and areas colour
+it; a group is not a tile.
 
 A group stays visible from the places it touches. `Area` on a file or directory lists the groups
 with a member inside it, each with the lines that lie there and their share of the group's
@@ -291,7 +299,7 @@ surfaces cannot drift.
 | `Tree` | A hierarchy (path or symbol) with a size measure and a colour measure, under filters |
 | `Xtab` | Two dimensions crossed, one measure per cell, under filters |
 | `Areas` | Ranked areas, top N, under a path and a detector, and under the line filters (role, concern, language): an area stays when one of its findings points at a line that passes them, and a group stays when any member does |
-| `Area` | One area, by path or group id: findings, measures, evidence, related areas, and for a path the groups that touch it |
+| `Area` | One area, by path or group id: findings, measures, evidence, related areas, and for a path the groups that touch it and every open area with evidence inside it, with the lines there that pass the line filters, as the map's colour counts them |
 | `Source` | One file's lines (a page at a time) with role, concern and finding ranges; the text is read from the file and refused when it changed since indexing |
 | `Catalog` | Dimensions, measures and detectors available |
 

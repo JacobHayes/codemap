@@ -484,3 +484,50 @@ fn areas_filter_by_the_lines_their_findings_touch() {
         Err(QueryError::UnknownValue { .. })
     ));
 }
+
+#[test]
+fn a_rule_on_a_file_colours_the_whole_file_and_lists_its_area() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 3);
+    write(dir.path(), "handlers/h.rs", &handler_functions("h", 10));
+    write(
+        dir.path(),
+        ".codemap/config.toml",
+        "[[rule]]\nname = \"file handling\"\nmeasure = \"handler_lines\"\nper = \"file\"\nat_most = 20\n",
+    );
+    let index = indexed(dir.path());
+    let tree = match answer(
+        &index,
+        &Query::Tree {
+            hierarchy: codemap_core::Hierarchy::Path,
+            size: None,
+            color: Some(codemap_core::MeasureRef::Named("finding_share".to_owned())),
+            filter: Filter::default(),
+            depth: None,
+        },
+    )
+    .unwrap()
+    {
+        Answer::Tree(tree) => tree,
+        other => panic!("not a tree: {other:?}"),
+    };
+    let node = tree
+        .nodes
+        .iter()
+        .find(|n| n.path == "handlers/h.rs")
+        .unwrap();
+    assert_eq!(node.value, Some(1.0));
+    let detail = match answer(
+        &index,
+        &Query::Area {
+            subject: "handlers/h.rs".to_owned(),
+            filter: None,
+        },
+    )
+    .unwrap()
+    {
+        Answer::Area(detail) => detail,
+        other => panic!("not an area: {other:?}"),
+    };
+    assert!(!detail.touching.is_empty());
+}

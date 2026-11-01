@@ -33,10 +33,11 @@ pub use measure::{
     Base, Filter, Measure, MeasureDef, MeasureRef, Term, catalog as measure_catalog,
 };
 pub use query::{
-    Answer, AreaCounts, AreaDetail, AreaList, Axis, Catalog, DEPTH_DEFAULT, DetectorCount,
-    DetectorInfo, Dimension, Envelope, GroupShare, Hidden, Hierarchy, Overview, PATH_DEPTH_DEFAULT,
-    Query, SCALE_STEPS, SCHEMA, SOURCE_LINES_MAX, Scale, Share, SizeInfo, Source, SourceFinding,
-    SourceLine, Spacing, Totals, Tree, TreeNode, Xtab, XtabCell, XtabHeader, answer,
+    Answer, AreaCounts, AreaDetail, AreaList, AreaShare, Axis, Catalog, DEPTH_DEFAULT,
+    DetectorCount, DetectorInfo, Dimension, Envelope, GroupShare, Hidden, Hierarchy, Overview,
+    PATH_DEPTH_DEFAULT, Query, RatioParts, SCALE_STEPS, SCHEMA, SOURCE_LINES_MAX, Scale, Share,
+    SizeInfo, Source, SourceFinding, SourceLine, Spacing, Totals, Tree, TreeNode, Xtab, XtabCell,
+    XtabHeader, answer,
 };
 pub use reader::{Index, QueryError};
 pub use role::role_for_path;

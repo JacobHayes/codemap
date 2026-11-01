@@ -38,6 +38,15 @@ pub struct SizeInfo {
     pub unit: String,
 }
 
+/// The two sums a ratio colour divides.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "Answer.ts")]
+pub struct RatioParts {
+    pub numerator: f64,
+    pub denominator: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "Answer.ts")]
@@ -58,6 +67,8 @@ pub struct TreeNode {
     pub kind: String,
     /// The file or directory this node is, or contains the symbol it is.
     pub path: String,
+    /// For a ratio colour, its numerator and denominator over the whole subtree.
+    pub color_parts: Option<RatioParts>,
     /// Rows cut off below this node by the depth limit.
     pub hidden: u32,
 }
@@ -150,6 +161,20 @@ pub(crate) fn tree(index: &Index, args: &Args) -> Result<Tree, QueryError> {
     Ok(finish(&accs, args, base.unit()))
 }
 
+/// The numerator and denominator of a ratio colour over a node's subtree.
+fn ratio_parts(args: &Args, acc: &Acc) -> Option<RatioParts> {
+    args.color
+        .as_ref()
+        .filter(|(measure, _)| measure.is_ratio())?;
+    match acc.inclusive.get(1..3)? {
+        [numerator, denominator] => Some(RatioParts {
+            numerator: *numerator,
+            denominator: *denominator,
+        }),
+        _ => None,
+    }
+}
+
 fn finish(accs: &[Acc], args: &Args, unit: &str) -> Tree {
     // Nodes with no mass cannot be drawn; their descendants have none either.
     let mut renumbered: Vec<Option<u32>> = Vec::with_capacity(accs.len());
@@ -173,8 +198,9 @@ fn finish(accs: &[Acc], args: &Args, unit: &str) -> Tree {
             has_child[parent] = true;
         }
     }
-    // A ratio of zero (no tests, no handling) is not a finding: it takes the plain fill.
-    let quiet_zero = args.color.as_ref().is_some_and(|c| c.0.is_ratio());
+    // A ratio of zero (no tests, no handling) or no line in any finding is not a finding: it takes
+    // the plain fill.
+    let quiet_zero = args.color.as_ref().is_some_and(|c| c.0.zero_is_plain());
     let coloured = |value: f64| !(quiet_zero && value <= 0.0);
     let tile_values: Vec<f64> = accs
         .iter()
@@ -204,6 +230,7 @@ fn finish(accs: &[Acc], args: &Args, unit: &str) -> Tree {
                     .zip(value.filter(|v| coloured(*v)))
                     .map(|(scale, v)| scale.step(v)),
                 value,
+                color_parts: ratio_parts(args, acc),
                 kind: acc.link.kind.clone(),
                 path: acc.link.path.clone(),
                 hidden: acc.hidden,

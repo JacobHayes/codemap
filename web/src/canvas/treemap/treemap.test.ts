@@ -35,6 +35,7 @@ function payload(rows: Row[]): Tree {
     value: null,
     kind: parents.has(id) ? 'directory' : 'file',
     path: name,
+    colorParts: null,
     hidden: 0,
   }));
   return {

@@ -1,6 +1,7 @@
 import type { Catalog, Scale } from '../generated/Answer';
-import { compact, plain } from '../format';
+import { compact, percentOf, plain } from '../format';
 import { neutralSwatch, scaleSwatches } from '../palette';
+import { zeroIsPlain } from '../query';
 import { useTheme } from '../useTheme';
 
 type LegendProps = { scale: Scale; catalog: Catalog | null };
@@ -10,7 +11,7 @@ export function Legend({ scale, catalog }: LegendProps) {
   const theme = useTheme();
   const def = catalog?.measures.find((m) => m.name === scale.measure);
   const isRatio = def?.measure.kind === 'ratio';
-  const number = isRatio ? plain : compact;
+  const number = scale.measure === 'finding_share' ? percentOf : isRatio ? plain : compact;
   const swatches = scaleSwatches(scale.steps, theme);
   return (
     <figure className="legend" aria-label="Colour scale">
@@ -32,7 +33,7 @@ export function Legend({ scale, catalog }: LegendProps) {
           style={{ background: neutralSwatch('leaf', theme).css }}
           aria-hidden="true"
         />
-        {isRatio ? 'Zero or no value' : 'No value'}
+        {zeroIsPlain(def?.measure) ? 'Zero or no value' : 'No value'}
         <span className="legend-steps">
           {scale.spacing === 'log' ? 'Steps grow by multiples.' : 'Steps are equal.'}
         </span>

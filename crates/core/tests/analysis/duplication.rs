@@ -11,6 +11,7 @@ fn detail(index: &codemap_core::Index, subject: &str) -> codemap_core::AreaDetai
         index,
         &Query::Area {
             subject: subject.to_owned(),
+            filter: None,
         },
     ) {
         Answer::Area(detail) => detail,
@@ -408,4 +409,78 @@ fn a_function_sharing_a_line_with_the_one_before_it_is_not_nested_in_it() {
     let index = indexed(dir.path());
 
     assert_eq!(all_duplication(&index).len(), 2);
+}
+
+#[test]
+fn finding_lines_warm_every_file_of_a_group_until_it_is_acknowledged() {
+    let dir = tempfile::tempdir().unwrap();
+    let files = ["a/one.rs", "b/two.rs", "c/three.rs"];
+    let index = copies_in(dir.path(), &files);
+    let id = all_duplication(&index).remove(0).area;
+    let tree = |index: &codemap_core::Index, path: Option<&str>| {
+        let query = Query::Tree {
+            hierarchy: Hierarchy::Path,
+            size: Some(MeasureRef::Named("lines".to_owned())),
+            color: Some(MeasureRef::Named("finding_share".to_owned())),
+            filter: Filter {
+                path: path.map(str::to_owned),
+                ..Filter::default()
+            },
+            depth: None,
+        };
+        match ask(index, &query) {
+            Answer::Tree(tree) => tree,
+            other => panic!("not a tree: {other:?}"),
+        }
+    };
+    let value_of = |tree: &codemap_core::Tree, path: &str| {
+        tree.nodes
+            .iter()
+            .find(|node| node.path == path)
+            .and_then(|node| node.value)
+    };
+    let open = tree(&index, None);
+    for file in files {
+        let node = open.nodes.iter().find(|n| n.path == file).unwrap();
+        let parts = node.color_parts.unwrap();
+        assert_eq!(parts.numerator, 9.0, "{file}");
+        assert_eq!(node.value, Some(9.0 / parts.denominator), "{file}");
+    }
+    // A directory takes the share of its own lines, not the mean of its children's shares.
+    let root = open.nodes.iter().find(|n| n.path.is_empty()).unwrap();
+    assert_eq!(root.color_parts.unwrap().numerator, 27.0);
+    // Every file is listed in the group's share, and a directory sums its files.
+    assert_eq!(detail(&index, "a/one.rs").touching[0].lines, 9);
+    assert_eq!(detail(&index, "").touching[0].lines, 27);
+    // The same population as the tile: a filter that matches no line leaves nothing to list.
+    let narrowed = match ask(
+        &index,
+        &Query::Area {
+            subject: "a/one.rs".to_owned(),
+            filter: Some(Filter {
+                concern: Some("comment".to_owned()),
+                ..Filter::default()
+            }),
+        },
+    ) {
+        Answer::Area(detail) => detail,
+        other => panic!("not an area: {other:?}"),
+    };
+    assert!(narrowed.touching.is_empty());
+    // A file no finding covers takes the plain fill, not a scale step.
+    let quiet = open.nodes.iter().find(|n| n.color_step.is_none());
+    assert!(quiet.is_some());
+
+    write(
+        dir.path(),
+        ".codemap/config.toml",
+        &format!("[[acknowledge]]\ngroup = \"{id}\"\nreason = \"essential\"\n"),
+    );
+    let index = indexed(dir.path());
+    assert_eq!(value_of(&tree(&index, None), "a/one.rs"), Some(0.0));
+    // A zero share takes the plain fill.
+    let after = tree(&index, None);
+    let node = after.nodes.iter().find(|n| n.path == "a/one.rs").unwrap();
+    assert_eq!(node.color_step, None);
+    assert!(detail(&index, "a/one.rs").touching.is_empty());
 }

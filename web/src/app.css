@@ -194,6 +194,29 @@
   flex: 1;
   font-size: var(--type-text-size);
 }
+.selection-block {
+  flex: 1;
+  min-width: 0;
+}
+.selection-block.reserved {
+  height: 8lh;
+  overflow-y: auto;
+}
+.touching {
+  overflow-wrap: anywhere;
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  font-size: var(--type-text-size);
+}
+.touching .muted,
+.tooltip .touching-lines {
+  color: var(--color-muted);
+}
+.selection-block .touching .muted,
+.selection-block .touching-lines {
+  color: var(--chrome-muted);
+}
 .selection-path {
   overflow: hidden;
   text-overflow: ellipsis;

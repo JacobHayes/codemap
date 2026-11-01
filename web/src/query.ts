@@ -1,3 +1,4 @@
+import type { MeasureDef } from './generated/Answer';
 import type { Query } from './generated/Query';
 import type { UrlState } from './urlState';
 
@@ -12,4 +13,9 @@ export function filterOf(state: UrlState): Filter {
   if (state.language !== null) filter.language = state.language;
   if (state.kind !== null) filter.symbolKind = state.kind;
   return filter;
+}
+
+/** The measures whose zero is no finding: it takes the plain fill and the legend says so. */
+export function zeroIsPlain(measure: MeasureDef['measure'] | undefined): boolean {
+  return measure?.kind === 'ratio' || (measure?.kind === 'sum' && measure.base === 'finding_lines');
 }

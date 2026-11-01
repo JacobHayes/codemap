@@ -369,7 +369,8 @@ fn a_ratio_cannot_be_a_size_and_unknown_names_are_errors() {
         answer(
             &index,
             &Query::Area {
-                subject: "missing".into()
+                subject: "missing".into(),
+                filter: None,
             }
         ),
         Err(QueryError::UnknownArea(_))

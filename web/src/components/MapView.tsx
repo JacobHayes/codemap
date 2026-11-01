@@ -10,7 +10,8 @@ import { type Navigate, type UrlState } from '../urlState';
 import { viewStateOf } from '../viewState';
 import { Empty } from './Empty';
 import { Legend } from './Legend';
-import { Tooltip } from './Tooltip';
+import { isFindingMeasure, Tooltip } from './Tooltip';
+import { TouchingAreas, useTouching } from './TouchingAreas';
 
 /** The tree query for a state; unset fields are left out so the server's defaults apply. */
 function treeQuery(state: UrlState): Query {
@@ -40,31 +41,48 @@ function SelectionBar({
   navigate,
 }: { tree: Tree } & Pick<MapProps, 'state' | 'navigate'>) {
   const node = tree.nodes.find((n) => n.id > 0 && n.path === state.selected);
-  if (!node) return <p className="selection muted">Nothing selected</p>;
+  const touching = useTouching(
+    isFindingMeasure(tree.scale?.measure) && node && node.value !== null && node.value > 0
+      ? node.path
+      : null,
+    state,
+  );
+  // Reserved whether or not something is selected, so choosing a tile never moves the map.
+  const listed = isFindingMeasure(tree.scale?.measure);
+  if (!node) {
+    return (
+      <div className={listed ? 'selection-block reserved' : 'selection-block'}>
+        <p className="selection muted">Nothing selected</p>
+      </div>
+    );
+  }
   return (
-    <p className="selection" aria-live="polite">
-      <span className="label">Selected</span>
-      <span className="mono selection-path">{node.path}</span>
-      <span>{exactAmount(node.total, tree.size.unit)}</span>
-      {node.kind === 'directory' && (
-        <button
-          onClick={() => {
-            navigate({ path: node.path, selected: null });
-          }}
-        >
-          Open
-        </button>
-      )}
-      {node.kind === 'file' && (
-        <button
-          onClick={() => {
-            navigate({ source: node.path, lines: null });
-          }}
-        >
-          View source
-        </button>
-      )}
-    </p>
+    <div className={listed ? 'selection-block reserved' : 'selection-block'}>
+      <p className="selection" aria-live="polite">
+        <span className="label">Selected</span>
+        <span className="mono selection-path">{node.path}</span>
+        <span>{exactAmount(node.total, tree.size.unit)}</span>
+        {node.kind === 'directory' && (
+          <button
+            onClick={() => {
+              navigate({ path: node.path, selected: null });
+            }}
+          >
+            Open
+          </button>
+        )}
+        {node.kind === 'file' && (
+          <button
+            onClick={() => {
+              navigate({ source: node.path, lines: null });
+            }}
+          >
+            View source
+          </button>
+        )}
+      </p>
+      {touching && <TouchingAreas shares={touching} link={{ state, navigate }} />}
+    </div>
   );
 }
 
@@ -119,6 +137,7 @@ export function MapView({ state, navigate, catalog, onHidden }: MapProps) {
         {pointed && node && (
           <Tooltip
             tree={tree}
+            state={state}
             catalog={catalog}
             node={node}
             x={pointed.x}
