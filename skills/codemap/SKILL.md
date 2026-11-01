@@ -59,14 +59,15 @@ fix roles once before trusting the areas.
    every member lies under it.
 
 To find duplicates that share intent in different words, add an `[inference]` table and put
-the key in the environment (OpenRouter's by default). Use Jev as the decision model; it separates
-copies from look-alikes well and costs a few cents per thousand candidates:
+the key in the environment (OpenRouter's by default). The empty table is enough: it uses Jev as
+the decision model, which separates copies from look-alikes well and costs a few cents per
+thousand candidates, and Qwen3 Embedding 8B for the vectors.
 
 ```toml
 [inference]
-embedding_model = "qwen/qwen3-embedding-8b"
-decision_model = "typesafe/jev-1.14"
 ```
+
+`embedding_model`, `decision_model`, `base_url` and `api_key_env` override the defaults.
 
 Commit `.codemap/config.toml` with the project; it holds facts about the project, not about
 your session.

@@ -264,7 +264,7 @@ speak. Tests seed the `embeddings` and
 `answers` tables instead of mocking a client.
 
 Semantic duplication runs after the deterministic analyses have committed, outside their
-transaction, and only when `[inference]` names both models and the environment holds the key;
+transaction, and only when the config has an `[inference]` table (its models default to Jev and Qwen3 Embedding 8B) and the environment holds the key;
 otherwise `codemap index` says in one line that it is off and why. Candidates are the nearest
 neighbours of each function above a similarity floor (measured, a named constant), minus pairs already connected, strongest first. A run asks about every
 candidate that has no cached answer, so the first run on a codebase costs the most and later
@@ -330,7 +330,7 @@ module. The cross-tab is a bounded table of buttons, so every cell is focusable 
 ## Configuration
 
 - **`.codemap/config.toml`** holds project facts: role overrides by glob, named measures,
-  rules, acknowledgements and model choices (`[inference]`: the embedding and decision models,
+  rules, acknowledgements and model choices (`[inference]`: optional embedding and decision models,
   the API's base URL, and the name of the environment variable that holds its key). It is
   optional and committed with the project.
 - **Flags** cover only the invocation: what to show, where to listen.

@@ -85,15 +85,18 @@ pub struct Acknowledgement {
     pub reason: String,
 }
 
-/// Where model calls go and which models answer: `[inference]`. Without it no analysis calls a
-/// model.
+/// Where model calls go and which models answer: `[inference]`. Without the table no analysis
+/// calls a model; an empty table turns them on with every default below.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Inference {
-    /// The embedding model, as the provider names it.
+    /// The embedding model, as the provider names it. The default is the one the similarity floor
+    /// was measured on.
+    #[serde(default = "default_embedding_model")]
     pub embedding_model: String,
-    /// The decision model that confirms candidate pairs: `typesafe/jev-1.14` (recommended) or
-    /// `openai/gpt-6-luna-decisions`, asked through the Decisions API.
+    /// The decision model that confirms candidate pairs, asked through the Decisions API: the
+    /// default `typesafe/jev-1.14`, or `openai/gpt-6-luna-decisions`.
+    #[serde(default = "default_decision_model")]
     pub decision_model: String,
     /// An OpenRouter-style API, with no trailing slash and ending in `/v1`. The Decisions API is served beside its
     /// `/v1`.
@@ -102,6 +105,14 @@ pub struct Inference {
     /// The environment variable holding the API key; the key itself never goes in the project.
     #[serde(default = "default_api_key_env")]
     pub api_key_env: String,
+}
+
+fn default_embedding_model() -> String {
+    "qwen/qwen3-embedding-8b".to_owned()
+}
+
+fn default_decision_model() -> String {
+    "typesafe/jev-1.14".to_owned()
 }
 
 fn default_base_url() -> String {
@@ -234,6 +245,19 @@ mod tests {
         )
         .unwrap();
         Config::load(dir.path())
+    }
+
+    #[test]
+    fn a_bare_inference_table_turns_inference_on_with_measured_models() {
+        assert_eq!(load("").unwrap().inference, None);
+        let inference = load("[inference]\n").unwrap().inference.unwrap();
+        assert!(crate::inference::probability_min(&inference.decision_model).is_some());
+        let named = load("[inference]\ndecision_model = \"x/y\"\n")
+            .unwrap()
+            .inference
+            .unwrap();
+        assert_eq!(named.decision_model, "x/y");
+        assert_eq!(named.embedding_model, inference.embedding_model);
     }
 
     #[test]
