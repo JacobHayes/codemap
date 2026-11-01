@@ -3,6 +3,8 @@ import { defineConfig } from 'vitest/config';
 
 // `npm run dev` proxies the API to a running `codemap serve` (its default port).
 export default defineConfig({
+  // Relative URLs, so the build works under any path prefix a reverse proxy mounts it at.
+  base: './',
   plugins: [react()],
   server: {
     // The shared design assets live beside web/, outside the Vite root.

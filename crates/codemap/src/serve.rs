@@ -148,7 +148,8 @@ async fn query(State(served): State<Arc<Served>>, Json(query): Json<Query>) -> R
     }
 }
 
-/// Serves a built file, or `index.html` for any other path so client-side routes load.
+/// Serves a built file, or `index.html` for any other path. The page's own URLs are relative and its
+/// state is the query string, so it is served at one path, whatever prefix a proxy mounts it under.
 async fn asset(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let (file, name) = match Assets::get(path) {

@@ -10,7 +10,7 @@ export const useRevision = () => useContext(RevisionContext);
 export function useServerRevision(): number {
   const [revision, setRevision] = useState(0);
   useEffect(() => {
-    const events = new EventSource('/api/events');
+    const events = new EventSource('api/events');
     events.addEventListener('refresh', (e) => {
       setRevision((JSON.parse((e as MessageEvent<string>).data) as Refresh).revision);
     });

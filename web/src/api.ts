@@ -3,7 +3,7 @@ import type { Query } from './generated/Query';
 
 /** Asks the server one question; the wire types are generated from the Rust ones. */
 export async function ask(query: Query): Promise<Envelope> {
-  const response = await fetch('/api/query', {
+  const response = await fetch('api/query', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(query),
