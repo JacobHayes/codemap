@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { amount, compact, counted, exactAmount, plain } from './format';
+import { amount, compact, counted, exactAmount, percentOf, plain } from './format';
 
 test('a count is short, with its unit in words', () => {
   expect(amount(303_412, 'lines')).toBe('303k lines');
@@ -38,4 +38,10 @@ test('a count agrees with its noun', () => {
   expect(counted(1, 'row')).toBe('1 row');
   expect(counted(0, 'row')).toBe('0 rows');
   expect(counted(5, 'column')).toBe('5 columns');
+});
+
+test('a share is a whole percent and a sliver is not zero', () => {
+  expect(percentOf(0.4)).toBe('40%');
+  expect(percentOf(0.001)).toBe('under 1%');
+  expect(percentOf(1)).toBe('100%');
 });

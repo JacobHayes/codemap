@@ -70,14 +70,14 @@ impl Codemap {
     }
 
     #[tool(
-        description = "Ranked areas worth a closer look, each with the detectors that flagged it and why. Use after overview to pick where to investigate."
+        description = "Ranked areas worth a closer look, each with the detectors that flagged it and why. A group (copies, a naming family, a repeated switch) is one area, whatever the number of files. Use after overview to pick where to investigate."
     )]
     async fn areas(&self, Parameters(args): Parameters<AreasArgs>) -> CallToolResult {
         self.ask(args.query()).await
     }
 
     #[tool(
-        description = "One area's findings, evidence line ranges and related areas. Pass a subject exactly as `areas` printed it."
+        description = "One area's findings, evidence line ranges and related areas; for a file or directory also the groups (copies, naming families, repeated switches) it belongs to. Pass a path or a group id exactly as `areas` printed it."
     )]
     async fn area(&self, Parameters(args): Parameters<AreaArgs>) -> CallToolResult {
         self.ask(args.query()).await

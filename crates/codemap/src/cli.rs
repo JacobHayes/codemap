@@ -66,7 +66,7 @@ enum Command {
         #[command(flatten)]
         args: AreasArgs,
     },
-    /// One area: its findings, evidence and related areas.
+    /// One area: its findings, evidence and related areas; for a path also the groups it belongs to.
     Area {
         #[command(flatten)]
         output: Output,

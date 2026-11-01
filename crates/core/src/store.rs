@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS findings (
     mass_lines DOUBLE, confidence DOUBLE, measures VARCHAR, labels VARCHAR, facts VARCHAR, evidence VARCHAR,
     acknowledged VARCHAR);
 CREATE TABLE IF NOT EXISTS areas (
-    subject VARCHAR, subject_kind VARCHAR, rank UINTEGER, opportunity DOUBLE, mass_lines DOUBLE,
+    subject VARCHAR, title VARCHAR, subject_kind VARCHAR, rank UINTEGER, opportunity DOUBLE, mass_lines DOUBLE,
     confidence DOUBLE, detectors VARCHAR, finding_count UINTEGER, reason VARCHAR,
     acknowledged VARCHAR);
 CREATE OR REPLACE VIEW line_facts AS

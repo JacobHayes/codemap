@@ -1,10 +1,16 @@
 import type { Area, AreaDetail, AreaList, Finding } from '../generated/Answer';
-import { amount, words } from '../format';
+import { amount, percentOf, words } from '../format';
 import { around, formatLines } from '../source';
 import { useAnswer } from '../useAnswer';
 import { filterOf } from '../query';
 import { hasFilters, type Navigate, type UrlState } from '../urlState';
+import type { ViewState } from '../viewState';
 import { Link } from './Link';
+
+function viewOf(list: AreaList, state: UrlState): ViewState {
+  if (state.area === null) return 'area-queue';
+  return state.area.startsWith('group:') ? 'area-group-expanded' : 'area-expanded';
+}
 
 type Common = { state: UrlState; navigate: Navigate };
 
@@ -22,12 +28,12 @@ function FindingView({
   area,
   state,
   navigate,
-}: { finding: Finding; area: Area } & Common) {
+}: { finding: Finding; area: Area | null } & Common) {
   return (
     <li className="finding">
       <div>
         <span className="label">{words(finding.detector)}</span>
-        {finding.reason !== area.reason && ` ${finding.reason}`}
+        {finding.reason !== area?.reason && ` ${finding.reason}`}
       </div>
       {finding.acknowledged !== null && (
         <div className="muted">Acknowledged: {finding.acknowledged}</div>
@@ -83,14 +89,29 @@ function Detail({ subject, state, navigate }: { subject: string } & Common) {
           />
         ))}
       </ul>
+      {detail.groups.length > 0 && (
+        <>
+          <h3>Groups this belongs to</h3>
+          <ul className="related">
+            {detail.groups.map((share) => (
+              <li key={share.group.subject}>
+                <Link state={state} patch={{ area: share.group.subject }} navigate={navigate}>
+                  {share.group.title}
+                </Link>
+                {`: ${amount(share.lines, 'lines')} of it here, ${percentOf(share.share)} of the group`}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       {detail.related.length > 0 && (
         <>
-          <h3>Nearby areas</h3>
+          <h3>{detail.area?.subjectKind === 'group' ? 'Areas of its files' : 'Nearby areas'}</h3>
           <ul className="related mono">
             {detail.related.map((area) => (
               <li key={area.subject}>
                 <Link state={state} patch={{ area: area.subject }} navigate={navigate}>
-                  {area.subject}
+                  {area.title}
                 </Link>
               </li>
             ))}
@@ -106,9 +127,13 @@ function AreaCard({ area, state, navigate }: { area: Area } & Common) {
   return (
     <li className={`card area${area.acknowledged === null ? '' : ' acknowledged'}`}>
       <div className="card-head">
-        <Link state={state} patch={mapPatch(area)} navigate={navigate} className="area-path mono">
-          {area.subject}
-        </Link>
+        {area.subjectKind === 'group' ? (
+          <span className="area-title">{area.title}</span>
+        ) : (
+          <Link state={state} patch={mapPatch(area)} navigate={navigate} className="area-path mono">
+            {area.title}
+          </Link>
+        )}
         <span className="area-mass">
           {amount(area.massLines, 'lines')}
           {area.subjectKind === 'file' || area.subjectKind === 'function' ? (
@@ -196,12 +221,16 @@ export function AreaQueue({ state, navigate }: Common) {
   const total = overview.state === 'ready' ? overview.answer.areas.total : null;
   const semantic = overview.state === 'ready' ? overview.answer.semantic : '';
   return (
-    <section
-      className="areas"
-      data-state="ready"
-      data-view={state.area === null ? 'area-queue' : 'area-expanded'}
-    >
+    <section className="areas" data-state="ready" data-view={viewOf(list, state)}>
       <Summary list={list} total={total} state={state} semantic={semantic} />
+      {state.area !== null && !list.areas.some((a) => a.subject === state.area) && (
+        // Reached from a link whose target the filters leave out of the list.
+        <div className="card area">
+          <div className="card-body">
+            <Detail subject={state.area} state={state} navigate={navigate} />
+          </div>
+        </div>
+      )}
       {list.areas.length === 0 ? (
         <div className="empty">
           <p>No areas stand out here.</p>

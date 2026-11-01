@@ -15,9 +15,13 @@ type Located = { path: string; startLine: number; endLine: number; area: string 
 export async function evidence(request: APIRequestContext): Promise<Located> {
   const ask = async (data: object): Promise<unknown> =>
     (await request.post('/api/query', { data })).json();
-  const { areas } = (await ask({ kind: 'areas', top: 20 })) as { areas: { subject: string }[] };
+  const { areas } = (await ask({ kind: 'areas', top: 20 })) as {
+    areas: { subject: string; subjectKind: string }[];
+  };
   const found: Located[] = [];
-  for (const { subject } of areas) {
+  // Group areas list source files of their own; their text names the very measures a page must
+  // never show, so only locations are used.
+  for (const { subject } of areas.filter((a) => a.subjectKind !== 'group')) {
     const detail = (await ask({ kind: 'area', subject })) as {
       findings: { area: string; evidence: Omit<Located, 'area'>[] }[];
     };
@@ -26,6 +30,15 @@ export async function evidence(request: APIRequestContext): Promise<Located> {
   const chosen = found.find((e) => e.endLine < 250) ?? found[0];
   if (chosen === undefined) throw new Error('the served project has no evidence to open');
   return chosen;
+}
+
+/** The subject of the best-ranked area that is a group, or a file or directory. */
+async function firstArea(request: APIRequestContext, kind: 'group' | 'location'): Promise<string> {
+  const response = await request.post('/api/query', { data: { kind: 'areas' } });
+  const answer = (await response.json()) as { areas: { subject: string; subjectKind: string }[] };
+  const found = answer.areas.find((a) => (a.subjectKind === 'group') === (kind === 'group'));
+  if (found === undefined) throw new Error(`the served project has no ${kind} area to unfold`);
+  return found.subject;
 }
 
 // One entry per view state, keyed by the app's own list of them: a new state does not compile
@@ -61,12 +74,9 @@ export const STATES: Record<ViewState, StateSpec> = {
   },
   'area-queue': { url: () => '/?view=areas' },
   'area-expanded': {
-    url: async (request) => {
-      const response = await request.post('/api/query', { data: { kind: 'areas', top: 1 } });
-      const answer = (await response.json()) as { areas: { subject: string }[] };
-      const subject = answer.areas[0]?.subject;
-      if (subject === undefined) throw new Error('the served project has no areas to unfold');
-      return `/?view=areas&area=${subject}`;
-    },
+    url: async (request) => `/?view=areas&area=${await firstArea(request, 'location')}`,
+  },
+  'area-group-expanded': {
+    url: async (request) => `/?view=areas&area=${await firstArea(request, 'group')}`,
   },
 };

@@ -302,6 +302,10 @@
   white-space: nowrap;
   font-weight: 600;
 }
+.area-title {
+  min-width: 0;
+  font-weight: 600;
+}
 .area-mass {
   font-family: var(--font-mono);
   white-space: nowrap;

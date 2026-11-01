@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use codemap_core::{
     Answer, Area, AreaDetail, AreaList, Catalog, Finding, Hidden, Overview, SOURCE_LINES_MAX,
-    Share, Source, Tree, TreeNode, Xtab,
+    Share, Source, SubjectKind, Tree, TreeNode, Xtab,
 };
 
 /// Children listed under one tile before the rest are summarised.
@@ -371,6 +371,9 @@ fn areas_text(list: &AreaList) -> String {
             |why| format!("acknowledged: {why}. {}", area.reason),
         );
         let _ = writeln!(out, "      {note}");
+        if area.subject_kind == SubjectKind::Group {
+            let _ = writeln!(out, "      id: {}", area.subject);
+        }
     }
     out
 }
@@ -380,7 +383,7 @@ fn area_row(area: &Area) -> Vec<String> {
         area.rank.to_string(),
         number(area.mass_lines.round()),
         area.detectors.join(", "),
-        area.subject.clone(),
+        area.title.clone(),
     ]
 }
 
@@ -393,6 +396,9 @@ fn finding_text(finding: &Finding) -> String {
         .collect();
     if !measures.is_empty() {
         let _ = writeln!(out, "    measures: {}", measures.join(", "));
+    }
+    if let Some(members) = finding.labels.get("members") {
+        let _ = writeln!(out, "    members: {}", members.replace('\n', ", "));
     }
     for evidence in &finding.evidence {
         let _ = writeln!(
@@ -408,22 +414,52 @@ fn finding_text(finding: &Finding) -> String {
 }
 
 fn area_text(detail: &AreaDetail) -> String {
-    let area = &detail.area;
-    let mut out = format!(
-        "{}: rank {}, {} lines, {} finding{} from {}\n",
-        area.subject,
-        area.rank,
-        number(area.mass_lines),
-        area.finding_count,
-        if area.finding_count == 1 { "" } else { "s" },
-        area.detectors.join(", "),
-    );
-    if let Some(why) = &area.acknowledged {
-        let _ = writeln!(out, "acknowledged: {why}");
+    let mut out = String::new();
+    if let Some(area) = &detail.area {
+        let _ = writeln!(
+            out,
+            "{}: rank {}, {} lines, {} finding{} from {}",
+            area.title,
+            area.rank,
+            number(area.mass_lines),
+            area.finding_count,
+            if area.finding_count == 1 { "" } else { "s" },
+            area.detectors.join(", "),
+        );
+        if area.subject_kind == SubjectKind::Group {
+            let _ = writeln!(out, "id: {}", area.subject);
+        }
+        if let Some(why) = &area.acknowledged {
+            let _ = writeln!(out, "acknowledged: {why}");
+        }
+    } else {
+        out.push_str("no area of its own; only part of the groups below\n");
     }
     out.push('\n');
     for finding in &detail.findings {
         out.push_str(&finding_text(finding));
+    }
+    if !detail.groups.is_empty() {
+        let rows: Vec<Vec<String>> = detail
+            .groups
+            .iter()
+            .map(|share| {
+                vec![
+                    share.group.rank.to_string(),
+                    format!("{} ({})", share.lines, percent(share.share)),
+                    share.group.title.clone(),
+                    share.group.subject.clone(),
+                ]
+            })
+            .collect();
+        let headers = [
+            ("#", Align::Right),
+            ("lines here", Align::Right),
+            ("group touching this", Align::Left),
+            ("id", Align::Left),
+        ];
+        out.push('\n');
+        out.push_str(&table(&headers, &rows));
     }
     if !detail.related.is_empty() {
         let rows: Vec<Vec<String>> = detail.related.iter().map(area_row).collect();

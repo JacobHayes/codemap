@@ -303,6 +303,10 @@ pub(crate) struct Member {
     pub start_line: u32,
     pub end_line: u32,
     pub is_test: bool,
+    /// The function's scope-qualified key, see `Index::member_keys`.
+    pub key: String,
+    /// The content hash of the function.
+    pub content_hash: String,
 }
 
 impl Member {
@@ -360,32 +364,43 @@ impl Group {
     }
 }
 
-/// The connected components of `similar`, in file order of their first members.
-pub(crate) fn groups(index: &Index) -> Result<Vec<Group>, QueryError> {
-    let connection = index.store().connection();
-    let mut statement = connection.prepare(
-        "SELECT s.id, s.path, s.name, s.kind = 'test' OR l.role = 'test', s.start_line, s.end_line
+/// Every function in a similar pair, in file order, with its place by symbol id.
+fn paired_members(index: &Index) -> Result<(BTreeMap<String, usize>, Vec<Member>), QueryError> {
+    let mut statement = index.store().connection().prepare(
+        "SELECT s.id, s.path, s.name, s.kind = 'test' OR l.role = 'test', s.start_line, s.end_line,
+                s.content_hash
          FROM symbols s JOIN lines l ON l.path = s.path AND l.line = s.start_line
          WHERE s.id IN (SELECT a FROM \"similar\" UNION SELECT b FROM \"similar\")
          ORDER BY s.path, s.start_line, s.end_line DESC",
     )?;
     let mut places = BTreeMap::new();
     let mut members = Vec::new();
+    let keys = index.member_keys()?;
     let found = statement.query_map([], |row| {
+        let id: String = row.get(0)?;
         let member = Member {
+            key: keys.get(&id).cloned().unwrap_or_default(),
             path: row.get(1)?,
             name: row.get(2)?,
             is_test: row.get(3)?,
             start_line: row.get(4)?,
             end_line: row.get(5)?,
+            content_hash: row.get(6)?,
         };
-        Ok((row.get::<_, String>(0)?, member))
+        Ok((id, member))
     })?;
     for row in found {
         let (id, member) = row?;
         places.insert(id, members.len());
         members.push(member);
     }
+    Ok((places, members))
+}
+
+/// The connected components of `similar`, in file order of their first members.
+pub(crate) fn groups(index: &Index) -> Result<Vec<Group>, QueryError> {
+    let connection = index.store().connection();
+    let (places, members) = paired_members(index)?;
     let mut components = Components::new(members.len());
     let mut statement = connection.prepare("SELECT a, b, kind, score FROM \"similar\"")?;
     let pairs = statement

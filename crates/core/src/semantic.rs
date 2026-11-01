@@ -1134,7 +1134,7 @@ mod tests {
             let (dir, status) =
                 semantic_run(&FILES, &VECTORS, &[("total", "order_value", 0.95)], true);
             assert_eq!(kinds(dir.path()), vec!["semantic"]);
-            assert_eq!(matches(dir.path()), vec!["semantic", "semantic"]);
+            assert_eq!(matches(dir.path()), vec!["semantic"]);
             let SemanticStatus::Ran(run) = status else {
                 panic!("did not run: {status:?}");
             };

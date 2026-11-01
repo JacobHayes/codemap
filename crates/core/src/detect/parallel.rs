@@ -26,13 +26,17 @@
 //! least [`SITES_MIN`] places in production code is one finding: adding a case means finding
 //! all the sites.
 //!
-//! Both are findings in every file they touch, each listing all members as evidence.
+//! Each is one finding, its own area: the evidence lists every member or site and the mass is
+//! their distinct lines. A family's id is a digest of its stem and kind class and a
+//! discriminator's of its case set, so both keep their id as members come and go.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use duckdb::params;
 
-use super::{Context, Detector, Finding, SubjectKind, is_ranked};
+use super::{
+    Context, Detector, Finding, distinct_lines_by_path, group_id, is_ranked, places_title,
+};
 use crate::reader::{Index, QueryError, SymbolRow};
 use crate::store::LABEL_SEPARATOR;
 use codemap_lang::Role;
@@ -46,8 +50,6 @@ const TRAILING: &[&str] = &["legacy", "old", "new", "deprecated", "compat", "bac
 const STEM_LEN_MIN: usize = 3;
 /// More definitions of one name than this make it a convention.
 const NAME_REPEAT_MAX: usize = 3;
-/// Members listed as evidence.
-const EVIDENCE_MAX: usize = 12;
 const CASES_MIN: usize = 3;
 const SITES_MIN: usize = 3;
 
@@ -65,30 +67,15 @@ impl Detector for Parallel {
     fn detect(&self, context: &Context) -> Result<Vec<Finding>, QueryError> {
         let symbols = context.index.symbols()?;
         let mut findings = Vec::new();
-        for family in families(&symbols) {
-            findings.extend(family_findings(&family));
-        }
-        for set in discriminators(context.index)? {
-            findings.extend(discriminator_findings(&set));
-        }
+        let keys = context.index.member_keys()?;
+        findings.extend(families(&symbols).iter().map(|f| family_finding(f, &keys)));
+        findings.extend(
+            discriminators(context.index)?
+                .iter()
+                .map(discriminator_finding),
+        );
         Ok(findings)
     }
-}
-
-/// Lines covered by line ranges, counting a line in nested ranges once.
-fn distinct_lines(ranges: impl Iterator<Item = (u32, u32)>) -> f64 {
-    let mut ranges: Vec<_> = ranges.collect();
-    ranges.sort_unstable();
-    let mut total = 0;
-    let mut reached = 0;
-    for (start, end) in ranges {
-        let start = start.max(reached + 1);
-        if end >= start {
-            total += end - start + 1;
-            reached = end;
-        }
-    }
-    f64::from(total)
 }
 
 fn number(value: usize) -> f64 {
@@ -183,6 +170,7 @@ fn split(name: &str, is_type: bool) -> Split {
 /// A group of symbols that are versions of one stem.
 struct Family<'a> {
     stem: String,
+    is_type: bool,
     members: Vec<&'a SymbolRow>,
 }
 
@@ -209,7 +197,7 @@ fn families(symbols: &[SymbolRow]) -> Vec<Family<'_>> {
     }
     groups
         .into_iter()
-        .filter_map(|((_, stem), members)| {
+        .filter_map(|((is_type, stem), members)| {
             let names: BTreeSet<&str> = members.iter().map(|(s, _)| s.name.as_str()).collect();
             // `Int` and `_int` differ only in style.
             let spellings: BTreeSet<String> = members
@@ -230,13 +218,14 @@ fn families(symbols: &[SymbolRow]) -> Vec<Family<'_>> {
             });
             (spellings.len() > 1 && !marked.is_empty() && counts && !repeated).then(|| Family {
                 stem,
+                is_type,
                 members: members.into_iter().map(|(symbol, _)| symbol).collect(),
             })
         })
         .collect()
 }
 
-fn family_findings(family: &Family) -> Vec<Finding> {
+fn family_finding(family: &Family, keys: &BTreeMap<String, String>) -> Finding {
     let names: BTreeSet<&str> = family.members.iter().map(|s| s.name.as_str()).collect();
     let shown: Vec<String> = names.iter().take(6).map(|n| format!("`{n}`")).collect();
     let reason = format!(
@@ -250,53 +239,62 @@ fn family_findings(family: &Family) -> Vec<Finding> {
         }
     );
     let files: BTreeSet<&str> = family.members.iter().map(|s| s.path.as_str()).collect();
-    let first = family.members[0];
-    files
-        .iter()
-        .map(|&file| {
-            let here = distinct_lines(
-                family
-                    .members
-                    .iter()
-                    .filter(|s| s.path == file)
-                    .map(|s| (s.start_line, s.end_line)),
-            );
-            let mut finding = Finding::new(
-                "parallel",
-                SubjectKind::Group,
-                &format!("{}::{}#{}", first.path, first.name, first.start_line),
-                reason.clone(),
-                here,
-                0.7,
-            )
-            .measure("members", number(family.members.len()))
-            .measure("names", number(names.len()))
-            .measure("files", number(files.len()))
-            .measure(
-                "totalLines",
-                family.members.iter().map(|s| f64::from(lines(s))).sum(),
-            );
-            file.clone_into(&mut finding.area);
-            finding
-                .labels
-                .insert("signal".to_owned(), "naming_family".to_owned());
-            finding
-                .labels
-                .insert("stem".to_owned(), family.stem.clone());
-            let mut parts: Vec<_> = family.members.iter().collect();
-            parts.sort_by_key(|member| member.path != file);
-            for member in parts.into_iter().take(EVIDENCE_MAX) {
-                finding = finding.evidence(&member.path, &[(member.start_line, member.end_line)]);
-            }
-            finding
-        })
-        .collect()
+    let mass = distinct_lines_by_path(
+        family
+            .members
+            .iter()
+            .map(|s| (s.path.as_str(), s.start_line, s.end_line)),
+    )
+    .values()
+    .sum::<u32>();
+    let key = [format!(
+        "{}:{}",
+        if family.is_type { "type" } else { "function" },
+        family.stem
+    )];
+    let mut finding = Finding::group(
+        "parallel",
+        &group_id("parallel", &key),
+        places_title(
+            &format!("Versions of {}", family.stem),
+            family.members.len(),
+            files.len(),
+        ),
+        reason,
+        f64::from(mass),
+        0.7,
+    )
+    .measure("members", number(family.members.len()))
+    .measure("names", number(names.len()))
+    .measure("files", number(files.len()))
+    .measure(
+        "totalLines",
+        family.members.iter().map(|s| f64::from(lines(s))).sum(),
+    );
+    finding
+        .labels
+        .insert("signal".to_owned(), "naming_family".to_owned());
+    finding
+        .labels
+        .insert("stem".to_owned(), family.stem.clone());
+    finding = finding.members(
+        family
+            .members
+            .iter()
+            .map(|m| keys.get(&m.id).cloned().unwrap_or_default()),
+    );
+    for member in &family.members {
+        finding = finding.evidence(&member.path, &[(member.start_line, member.end_line)]);
+    }
+    finding
 }
 
 // --- repeated discriminators ---
 
 /// One place that switches on a case set.
 struct Site {
+    /// The enclosing symbol's scope-qualified key, or the path.
+    key: String,
     path: String,
     start_line: u32,
     end_line: u32,
@@ -309,14 +307,20 @@ struct CaseSet {
 
 fn discriminators(index: &Index) -> Result<Vec<CaseSet>, QueryError> {
     let mut statement = index.store().connection().prepare(
-        "SELECT w.path, w.start_line, w.end_line, w.labels, l.role
+        "SELECT w.path, w.start_line, w.end_line, w.labels, l.role, w.symbol
          FROM switches w JOIN lines l ON l.path = w.path AND l.line = w.start_line
          ORDER BY w.labels, w.path, w.start_line",
     )?;
+    let keys = index.member_keys()?;
     let rows = statement.query_map(params![], |row| {
+        let path: String = row.get(0)?;
+        let symbol: Option<String> = row.get(5)?;
         Ok((
             Site {
-                path: row.get(0)?,
+                key: symbol
+                    .and_then(|id| keys.get(&id).cloned())
+                    .unwrap_or_else(|| path.clone()),
+                path,
                 start_line: row.get(1)?,
                 end_line: row.get(2)?,
             },
@@ -343,7 +347,7 @@ fn discriminators(index: &Index) -> Result<Vec<CaseSet>, QueryError> {
         .collect())
 }
 
-fn discriminator_findings(set: &CaseSet) -> Vec<Finding> {
+fn discriminator_finding(set: &CaseSet) -> Finding {
     let shown: Vec<&str> = set.labels.iter().take(5).map(String::as_str).collect();
     let reason = format!(
         "The same {} cases ({}{}) are switched on in {} places.",
@@ -357,40 +361,36 @@ fn discriminator_findings(set: &CaseSet) -> Vec<Finding> {
         set.sites.len()
     );
     let files: BTreeSet<&str> = set.sites.iter().map(|s| s.path.as_str()).collect();
-    let first = &set.sites[0];
-    files
-        .iter()
-        .map(|&file| {
-            let here = distinct_lines(
-                set.sites
-                    .iter()
-                    .filter(|s| s.path == file)
-                    .map(|s| (s.start_line, s.end_line)),
-            );
-            let mut finding = Finding::new(
-                "parallel",
-                SubjectKind::Group,
-                &format!("{}#{}", first.path, first.start_line),
-                reason.clone(),
-                here,
-                0.6,
-            )
-            .measure("cases", number(set.labels.len()))
-            .measure("sites", number(set.sites.len()))
-            .measure("files", number(files.len()));
-            file.clone_into(&mut finding.area);
-            finding
-                .labels
-                .insert("signal".to_owned(), "repeated_discriminator".to_owned());
-            // This file's sites first, so the cap never leaves the area without its own range.
-            let mut parts: Vec<_> = set.sites.iter().collect();
-            parts.sort_by_key(|site| site.path != file);
-            for site in parts.into_iter().take(EVIDENCE_MAX) {
-                finding = finding.evidence(&site.path, &[(site.start_line, site.end_line)]);
-            }
-            finding
-        })
-        .collect()
+    let mass = distinct_lines_by_path(
+        set.sites
+            .iter()
+            .map(|s| (s.path.as_str(), s.start_line, s.end_line)),
+    )
+    .values()
+    .sum::<u32>();
+    let mut finding = Finding::group(
+        "parallel",
+        &group_id("parallel", &set.labels),
+        places_title(
+            &format!("The same {} cases switched on", set.labels.len()),
+            set.sites.len(),
+            files.len(),
+        ),
+        reason,
+        f64::from(mass),
+        0.6,
+    )
+    .measure("cases", number(set.labels.len()))
+    .measure("sites", number(set.sites.len()))
+    .measure("files", number(files.len()));
+    finding
+        .labels
+        .insert("signal".to_owned(), "repeated_discriminator".to_owned());
+    finding = finding.members(set.sites.iter().map(|s| s.key.clone()));
+    for site in &set.sites {
+        finding = finding.evidence(&site.path, &[(site.start_line, site.end_line)]);
+    }
+    finding
 }
 
 #[cfg(test)]

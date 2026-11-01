@@ -1,6 +1,8 @@
 //! The parallel-structures detector fires on naming families and on case sets switched on in
 //! several places, and stays quiet on ordinary names and one-off switches.
 
+use codemap_core::SubjectKind;
+
 use crate::common::{baseline, findings_of, indexed, write};
 
 fn signal(index: &codemap_core::Index, signal: &str) -> Vec<codemap_core::Finding> {
@@ -15,7 +17,7 @@ fn strukt(name: &str) -> String {
 }
 
 #[test]
-fn versions_of_one_name_are_a_family_listed_in_every_file() {
+fn versions_of_one_name_are_one_family_that_lists_every_file() {
     let dir = tempfile::tempdir().unwrap();
     baseline(dir.path(), 5);
     write(dir.path(), "src/order.rs", &strukt("Order"));
@@ -24,11 +26,15 @@ fn versions_of_one_name_are_a_family_listed_in_every_file() {
     write(dir.path(), "src/other.rs", &strukt("Invoice"));
     let index = indexed(dir.path());
     let found = signal(&index, "naming_family");
-    let mut areas: Vec<_> = found.iter().map(|f| f.area.as_str()).collect();
-    areas.sort_unstable();
-    assert_eq!(areas, ["src/legacy.rs", "src/order.rs", "src/order_v2.rs"]);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].subject_kind, SubjectKind::Group);
     assert_eq!(found[0].measures["names"], 3.0);
-    assert_eq!(found[0].evidence.len(), 3);
+    assert_eq!(found[0].measures["files"], 3.0);
+    let mut paths: Vec<_> = found[0].evidence.iter().map(|e| e.path.as_str()).collect();
+    paths.sort_unstable();
+    assert_eq!(paths, ["src/legacy.rs", "src/order.rs", "src/order_v2.rs"]);
+    // Three two-line structs of three lines each.
+    assert_eq!(found[0].mass_lines, 9.0);
     assert_eq!(found[0].labels["stem"], "order");
 }
 
@@ -42,10 +48,11 @@ fn function_versions_in_snake_case_and_a_marker_word_are_families() {
         "pub fn parse_input(a: u32) -> u32 {\n    a + 1\n}\n\npub fn parse_input_v1(a: u32) -> u32 {\n    a + 2\n}\n\npub fn render_page(a: u32) -> u32 {\n    a + 3\n}\n\npub fn render_page_new(a: u32) -> u32 {\n    a + 4\n}\n",
     );
     let index = indexed(dir.path());
-    let stems: Vec<_> = signal(&index, "naming_family")
+    let mut stems: Vec<_> = signal(&index, "naming_family")
         .iter()
         .map(|f| f.labels["stem"].clone())
         .collect();
+    stems.sort();
     assert_eq!(stems, ["parseinput", "renderpage"]);
 }
 
@@ -112,9 +119,8 @@ fn the_same_cases_switched_on_in_several_places_are_one_finding() {
     );
     let index = indexed(dir.path());
     let found = signal(&index, "repeated_discriminator");
-    let mut areas: Vec<_> = found.iter().map(|f| f.area.as_str()).collect();
-    areas.sort_unstable();
-    assert_eq!(areas, ["src/area.rs", "src/draw.rs", "src/name.rs"]);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].measures["files"], 3.0);
     assert_eq!(found[0].measures["sites"], 3.0);
     assert_eq!(found[0].measures["cases"], 4.0);
     assert_eq!(found[0].evidence.len(), 3);
@@ -133,7 +139,9 @@ fn payloads_guards_and_catch_alls_do_not_change_the_case_set() {
         write(dir.path(), &format!("src/s{i}.rs"), shape);
     }
     let index = indexed(dir.path());
-    assert_eq!(signal(&index, "repeated_discriminator").len(), 3);
+    let found = signal(&index, "repeated_discriminator");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].measures["sites"], 3.0);
 }
 
 #[test]
@@ -157,7 +165,9 @@ fn switches_in_other_forms_and_languages_count_and_tests_do_not() {
     write(dir.path(), "svc/d.go", go);
     let index = indexed(dir.path());
     // Four sites of one set across a switch and an if chain, in three languages.
-    assert_eq!(signal(&index, "repeated_discriminator").len(), 4);
+    let found = signal(&index, "repeated_discriminator");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].measures["sites"], 4.0);
 
     let quiet = tempfile::tempdir().unwrap();
     baseline(quiet.path(), 5);
@@ -188,16 +198,9 @@ fn go_cases_listed_together_or_apart_and_type_switches_are_one_case_set() {
     }
     let index = indexed(dir.path());
     let found = signal(&index, "repeated_discriminator");
-    let mut areas: Vec<_> = found.iter().map(|f| f.area.as_str()).collect();
-    areas.sort_unstable();
-    assert_eq!(
-        areas,
-        [
-            "svc/a.go", "svc/b.go", "svc/c.go", "svc/d.go", "svc/e.go", "svc/f.go"
-        ]
-    );
+    // The type cases and the named constants are two sets of three sites each.
     let sites: Vec<_> = found.iter().map(|f| f.measures["sites"]).collect();
-    assert_eq!(sites, [3.0; 6]);
+    assert_eq!(sites, [3.0; 2]);
 }
 
 #[test]
@@ -225,7 +228,7 @@ fn a_bare_number_marks_a_type_beside_its_unnumbered_name_only() {
 }
 
 #[test]
-fn nested_switches_count_their_lines_once_and_every_file_keeps_its_own_evidence() {
+fn nested_switches_count_their_lines_once_and_every_site_is_evidence() {
     let dir = tempfile::tempdir().unwrap();
     baseline(dir.path(), 5);
     let nested = "pub fn outer(k: Kind) -> u32 {\n    match k {\n        Kind::Circle => match k {\n            Kind::Circle => 1,\n            Kind::Square => 2,\n            Kind::Line => 3,\n        },\n        Kind::Square => 2,\n        Kind::Line => 3,\n    }\n}\n";
@@ -239,10 +242,28 @@ fn nested_switches_count_their_lines_once_and_every_file_keeps_its_own_evidence(
     }
     let index = indexed(dir.path());
     let found = signal(&index, "repeated_discriminator");
-    let nested_area = found.iter().find(|f| f.area == "src/n.rs").unwrap();
-    // The outer match spans 9 lines and the inner 5 inside it.
-    assert_eq!(nested_area.mass_lines, 9.0);
-    for finding in &found {
-        assert!(finding.evidence.iter().any(|e| e.path == finding.area));
-    }
+    assert_eq!(found.len(), 1);
+    let finding = &found[0];
+    // The outer match spans 9 lines and the inner 5 inside it; each other site is 5 lines.
+    assert_eq!(finding.mass_lines, 9.0 + 14.0 * 5.0);
+    // The outer and inner match of the nested file, and one site in each of the others.
+    assert_eq!(finding.evidence.len(), 16);
+    assert!(finding.evidence.iter().any(|e| e.path == "src/n.rs"));
+    assert!(finding.evidence.iter().any(|e| e.path == "src/f13.rs"));
+}
+
+#[test]
+fn a_family_of_types_and_one_of_functions_never_share_an_id() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    write(
+        dir.path(),
+        "src/a.py",
+        "class Function:\n    pass\n\nclass LegacyFunction:\n    pass\n\ndef type(a):\n    return a + 1\n\ndef type_old(a):\n    return a + 2\n",
+    );
+    let index = indexed(dir.path());
+    let found = signal(&index, "naming_family");
+    let ids: std::collections::BTreeSet<_> = found.iter().map(|f| f.area.clone()).collect();
+    assert_eq!(found.len(), 2);
+    assert_eq!(ids.len(), 2);
 }

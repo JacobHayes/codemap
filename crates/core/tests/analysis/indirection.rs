@@ -1,6 +1,8 @@
 //! The indirection detector fires on wrappers, chains and abstractions with one
 //! implementation, and stays quiet on functions that do something and on tests.
 
+use codemap_core::SubjectKind;
+
 use crate::common::{baseline, findings_of, indexed, write};
 
 fn signal(index: &codemap_core::Index, signal: &str) -> Vec<codemap_core::Finding> {
@@ -38,7 +40,7 @@ fn a_function_that_only_passes_its_arguments_on_is_a_wrapper() {
 }
 
 #[test]
-fn a_chain_of_wrappers_is_one_finding_in_every_file_it_crosses() {
+fn a_chain_of_wrappers_is_one_group_whatever_the_files_it_crosses() {
     let dir = tempfile::tempdir().unwrap();
     baseline(dir.path(), 5);
     write(dir.path(), "src/worker.rs", WORKER);
@@ -59,17 +61,15 @@ fn a_chain_of_wrappers_is_one_finding_in_every_file_it_crosses() {
     );
     let index = indexed(dir.path());
     let found = signal(&index, "pass_through");
-    let mut areas: Vec<_> = found.iter().map(|f| f.area.as_str()).collect();
-    areas.sort_unstable();
-    assert_eq!(areas, ["src/a.rs", "src/b.rs", "src/c.rs"]);
-    for finding in &found {
-        assert_eq!(finding.measures["chainLength"], 3.0);
-        assert_eq!(finding.subject, found[0].subject);
-        // Outermost first, the function that does the work last.
-        assert_eq!(finding.evidence.len(), 4);
-        assert_eq!(finding.evidence[0].path, "src/a.rs");
-        assert_eq!(finding.evidence[3].path, "src/worker.rs");
-    }
+    assert_eq!(found.len(), 1);
+    let finding = &found[0];
+    assert_eq!(finding.subject_kind, SubjectKind::Group);
+    assert_eq!(finding.measures["chainLength"], 3.0);
+    assert_eq!(finding.measures["files"], 3.0);
+    // Outermost first, the function that does the work last.
+    assert_eq!(finding.evidence.len(), 4);
+    assert_eq!(finding.evidence[0].path, "src/a.rs");
+    assert_eq!(finding.evidence[3].path, "src/worker.rs");
 }
 
 #[test]
@@ -213,7 +213,7 @@ fn an_abstraction_with_one_implementor_is_flagged_in_each_language() {
         }
         let index = indexed(dir.path());
         let found = signal(&index, "single_implementation");
-        assert_eq!(found.len(), 2, "{kind}");
+        assert_eq!(found.len(), 1, "{kind}");
         assert!(found[0].reason.contains("Store"), "{kind}");
         assert_eq!(found[0].evidence.len(), 2, "{kind}");
         assert_eq!(found[0].measures["implementors"], 1.0);
@@ -350,4 +350,27 @@ fn a_type_assertion_with_a_string_type_is_still_a_wrapper() {
     );
     let index = indexed(dir.path());
     assert_eq!(signal(&index, "pass_through").len(), 1);
+}
+
+#[test]
+fn an_abstraction_group_keeps_its_id_when_its_implementation_is_replaced() {
+    let id_with = |implementor: &str| {
+        let dir = tempfile::tempdir().unwrap();
+        baseline(dir.path(), 5);
+        write(
+            dir.path(),
+            "src/store.rs",
+            "pub trait Store {\n    fn put(&self, key: u32);\n}\n",
+        );
+        write(
+            dir.path(),
+            "src/imp.rs",
+            &format!(
+                "pub struct {implementor};\n\nimpl Store for {implementor} {{\n    fn put(&self, key: u32) {{\n        let _ = key + 1;\n    }}\n}}\n"
+            ),
+        );
+        let index = indexed(dir.path());
+        signal(&index, "single_implementation").remove(0).area
+    };
+    assert_eq!(id_with("SqlStore"), id_with("MemStore"));
 }

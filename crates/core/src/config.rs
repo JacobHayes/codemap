@@ -35,6 +35,10 @@ pub enum ConfigError {
     UnknownMeasure { rule: String, measure: String },
     #[error("rule {rule:?} needs at_least or at_most")]
     NoThreshold { rule: String },
+    #[error(
+        "an [[acknowledge]] entry needs exactly one of path and group, and members only with group (reason {reason:?})"
+    )]
+    AcknowledgementTarget { reason: String },
     #[error("[roles] maps {glob:?} to the unknown role {role:?}")]
     UnknownRole { glob: String, role: String },
     #[error("[roles] glob {glob:?} is not valid: {source}")]
@@ -66,8 +70,16 @@ pub struct Rule {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Acknowledgement {
-    /// A file or directory, relative to the root.
-    pub path: String,
+    /// A file or directory, relative to the root. It covers the location's own findings and the
+    /// groups whose every member lies under it. Exactly one of `path` and `group`.
+    pub path: Option<String>,
+    /// A group's id, as `codemap areas` prints it.
+    pub group: Option<String>,
+    /// The group's members as `area` printed them. When no group has the id any more (its
+    /// natural key changed), the group sharing at least half of its members with this set is the
+    /// one acknowledged. Only with `group`.
+    #[serde(default)]
+    pub members: Vec<String>,
     /// Only this detector's findings; every detector's when absent.
     pub detector: Option<String>,
     pub reason: String,
@@ -156,6 +168,15 @@ impl Config {
                 });
             }
         }
+        for acknowledgement in &self.acknowledgements {
+            if acknowledgement.path.is_some() == acknowledgement.group.is_some()
+                || (acknowledgement.path.is_some() && !acknowledgement.members.is_empty())
+            {
+                return Err(ConfigError::AcknowledgementTarget {
+                    reason: acknowledgement.reason.clone(),
+                });
+            }
+        }
         RoleOverrides::new(&self.roles).map(drop)
     }
 }
@@ -195,5 +216,37 @@ impl RoleOverrides {
             .iter()
             .find(|(matcher, _)| matcher.matched_path_or_any_parents(path, false).is_ignore())
             .map(|&(_, role)| role)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Config, ConfigError};
+
+    fn load(config: &str) -> Result<Config, ConfigError> {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(super::STATE_DIR)).unwrap();
+        std::fs::write(
+            dir.path().join(super::STATE_DIR).join(super::CONFIG_FILE),
+            config,
+        )
+        .unwrap();
+        Config::load(dir.path())
+    }
+
+    #[test]
+    fn an_acknowledgement_names_a_path_or_a_group_never_both_or_neither() {
+        assert!(load("[[acknowledge]]\npath = \"a\"\nreason = \"r\"\n").is_ok());
+        assert!(load("[[acknowledge]]\ngroup = \"group:size:abc\"\nreason = \"r\"\n").is_ok());
+        for config in [
+            "[[acknowledge]]\nreason = \"r\"\n",
+            "[[acknowledge]]\npath = \"a\"\ngroup = \"g\"\nreason = \"r\"\n",
+            "[[acknowledge]]\npath = \"a\"\nmembers = [\"b\"]\nreason = \"r\"\n",
+        ] {
+            assert!(matches!(
+                load(config),
+                Err(ConfigError::AcknowledgementTarget { .. })
+            ));
+        }
     }
 }

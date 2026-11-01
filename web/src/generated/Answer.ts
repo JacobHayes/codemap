@@ -7,9 +7,19 @@ import type { Axis, Hierarchy, Measure } from "./Query";
 export type Answer = { "kind": "overview" } & Overview | { "kind": "tree" } & Tree | { "kind": "xtab" } & Xtab | { "kind": "areas" } & AreaList | { "kind": "area" } & AreaDetail | { "kind": "source" } & Source | { "kind": "catalog" } & Catalog;
 
 /**
- * A file or directory with the findings that point at it.
+ * A location (file or directory) with the findings that point at it, or a group (copies, a
+ * naming family, a repeated switch) with its one finding.
  */
-export type Area = { subject: string, subjectKind: SubjectKind, 
+export type Area = { 
+/**
+ * A path, or a group's id.
+ */
+subject: string, 
+/**
+ * What to call it: the path, or for a group what the pattern is and how many places and
+ * files it spans.
+ */
+title: string, subjectKind: SubjectKind, 
 /**
  * 1 is the first area to look at.
  */
@@ -36,11 +46,19 @@ byDetector: Array<DetectorCount>, };
 /**
  * One area with everything detectors said about it.
  */
-export type AreaDetail = { area: Area, findings: Array<Finding>, 
+export type AreaDetail = { 
 /**
- * Areas above or below this one in the tree.
+ * Absent when a path has no area of its own and is only part of groups.
  */
-related: Array<Area>, };
+area: Area | null, findings: Array<Finding>, 
+/**
+ * Areas above or below this one in the tree; for a group, the areas of the files it spans.
+ */
+related: Array<Area>, 
+/**
+ * For a file or directory: the groups with a member in it, best first.
+ */
+groups: Array<GroupShare>, };
 
 /**
  * The ranked areas under a filter.
@@ -87,15 +105,17 @@ export type Evidence = { path: string, startLine: number, endLine: number, };
  */
 export type Finding = { detector: string, 
 /**
- * A directory or file path, or `path::name` for a function.
+ * A directory or file path, `path::name` for a function, or a group's id.
  */
 subject: string, subjectKind: SubjectKind, 
 /**
- * The file or directory whose area this finding belongs to.
+ * The area this finding belongs to: the file or directory it sits in, or for a group its
+ * id.
  */
 area: string, reason: string, 
 /**
- * The lines the finding points at; weighs the area's opportunity.
+ * What weighs the area's opportunity: a group's lines counted once, a place's lines beyond
+ * what its peers' median would hold.
  */
 massLines: number, 
 /**
@@ -118,6 +138,19 @@ facts: Array<string>, evidence: Array<Evidence>,
  * The reason an acknowledgement gives, when one covers this finding.
  */
 acknowledged: string | null, };
+
+/**
+ * A group touching a location, and how much of the group lies there.
+ */
+export type GroupShare = { group: Area, 
+/**
+ * The group's evidence lines inside the location.
+ */
+lines: number, 
+/**
+ * Those lines as a share of all the group's evidence lines, 0 to 1.
+ */
+share: number, };
 
 /**
  * What the default population left out of an answer.

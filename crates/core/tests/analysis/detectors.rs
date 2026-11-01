@@ -140,6 +140,16 @@ fn size_fires_on_an_outlier_file_function_and_concentrated_directory() {
             .iter()
             .any(|f| f.subject == "big" && f.subject_kind == SubjectKind::Directory)
     );
+    // A place weighs by its excess over the peer median, not its total.
+    for finding in found
+        .iter()
+        .filter(|f| f.subject_kind != SubjectKind::Directory)
+    {
+        assert_eq!(
+            finding.mass_lines,
+            finding.measures["lines"] - finding.measures["typicalLines"]
+        );
+    }
     // Function findings roll up to the file they sit in.
     assert!(
         areas(&index)

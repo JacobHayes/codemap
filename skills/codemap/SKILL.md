@@ -52,6 +52,12 @@ fix roles once before trusting the areas.
    reason = "hand-written parser tables"
    ```
 
+   A group (copies, a naming family, a repeated switch) is acknowledged by its id, which
+   `codemap areas` prints under it, with `group = "group:duplication:..."` in place of `path`
+   and `members = [...]` as `codemap area <id>` lists them. The acknowledgement follows the
+   group while its copies are edited or its sites come and go. A `path` covers a group only when
+   every member lies under it.
+
 Commit `.codemap/config.toml` with the project; it holds facts about the project, not about
 your session.
 
@@ -62,7 +68,9 @@ your session.
    `--role test`, `--concern handler`, `--language rust`; `codemap catalog` lists
    detectors, measures and dimensions.
 2. `codemap area <subject> --json`: the findings, evidence (line ranges) and related areas
-   for one file or directory exactly as `areas` printed it.
+   for one file or directory, or one group id, exactly as `areas` printed it. A group (copies,
+   a naming family, a repeated switch) is one area however many files it spans; asking for a
+   file or directory also lists the groups it belongs to and its share of each.
    `codemap source <path> --lines a-b` shows those lines with role, concern and the findings
    touching them (long files come in pages; it says how to ask for the next).
    `codemap xtab --rows role --cols concern` crosses two dimensions (role, concern, language,

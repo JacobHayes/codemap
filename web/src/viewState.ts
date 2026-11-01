@@ -19,14 +19,15 @@ export type ViewState =
   | 'source-file'
   | 'source-range'
   | 'area-queue'
-  | 'area-expanded';
+  | 'area-expanded'
+  | 'area-group-expanded';
 
 export type Facts = { empty: boolean; tooltip: boolean; colourIsRatio: boolean };
 
-/** Names the state a page is in, strongest first. */
+/** Names the state a map, cross-tab or source page is in, strongest first; the area queue names
+ * its own (it alone knows what kind of area is open). */
 export function viewStateOf(state: UrlState, facts: Facts): ViewState {
   if (state.source !== null) return state.lines === null ? 'source-file' : 'source-range';
-  if (state.view === 'areas') return state.area === null ? 'area-queue' : 'area-expanded';
   if (state.view === 'xtab') {
     if (facts.empty) return 'xtab-empty';
     return state.rows === 'path' || state.cols === 'path' ? 'xtab-by-path' : 'xtab';

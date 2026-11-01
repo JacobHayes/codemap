@@ -47,6 +47,7 @@ impl Index {
         for area in areas {
             area_rows.append_row(params![
                 area.subject,
+                area.title,
                 area.subject_kind.as_str(),
                 area.rank,
                 area.opportunity,
@@ -65,22 +66,23 @@ impl Index {
     /// Every area, best first.
     pub(crate) fn areas(&self) -> Result<Vec<Area>, QueryError> {
         let mut statement = self.store().connection().prepare(
-            "SELECT subject, subject_kind, rank, opportunity, mass_lines, confidence, detectors,
+            "SELECT subject, title, subject_kind, rank, opportunity, mass_lines, confidence, detectors,
                     finding_count, reason, acknowledged FROM areas ORDER BY rank",
         )?;
         let rows = statement.query_map([], |row| {
-            let detectors: String = row.get(6)?;
+            let detectors: String = row.get(7)?;
             Ok(Area {
                 subject: row.get(0)?,
-                subject_kind: kind_of(&row.get::<_, String>(1)?),
-                rank: row.get(2)?,
-                opportunity: row.get(3)?,
-                mass_lines: row.get(4)?,
-                confidence: row.get(5)?,
+                title: row.get(1)?,
+                subject_kind: kind_of(&row.get::<_, String>(2)?),
+                rank: row.get(3)?,
+                opportunity: row.get(4)?,
+                mass_lines: row.get(5)?,
+                confidence: row.get(6)?,
                 detectors: detectors.split(',').map(str::to_owned).collect(),
-                finding_count: row.get(7)?,
-                reason: row.get(8)?,
-                acknowledged: row.get(9)?,
+                finding_count: row.get(8)?,
+                reason: row.get(9)?,
+                acknowledged: row.get(10)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -89,6 +91,11 @@ impl Index {
     /// The findings of one area, biggest first.
     pub(crate) fn findings_of(&self, area: &str) -> Result<Vec<Finding>, QueryError> {
         self.findings_where("area = ?", &[area])
+    }
+
+    /// Every group finding, biggest first.
+    pub(crate) fn group_findings(&self) -> Result<Vec<Finding>, QueryError> {
+        self.findings_where("subject_kind = 'group'", &[])
     }
 
     /// Every finding, biggest first.

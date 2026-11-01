@@ -13,6 +13,9 @@
 //! against peers of the same kind, production or test, since a suite of small fixtures says
 //! nothing about how big source files should be.
 //!
+//! A file or function is ranked by its excess over the peer median, as a directory is, so a
+//! large place does not outrank every pattern for its size alone.
+//!
 //! A directory is a concentration when its files are far larger than the files of its peer
 //! directories: its mean file size is a robust outlier on the same log scale among directories of
 //! at least [`CONCENTRATION_FILES_MIN`] files, and the lines beyond what its files would hold at
@@ -183,10 +186,11 @@ fn files_of(context: &Context, role: Role) -> Vec<Finding> {
                 SubjectKind::File,
                 path,
                 reason,
-                agg.lines,
+                (agg.lines - median_lines).max(0.0),
                 z / (z + OUTLIER_Z),
             )
             .measure("lines", agg.lines)
+            .measure("excessLines", (agg.lines - median_lines).max(0.0))
             .measure("tokens", agg.tokens)
             .measure("typicalLines", median_lines)
             .measure("robustZ", z)
@@ -244,10 +248,11 @@ fn functions(context: &Context) -> Vec<Finding> {
                 SubjectKind::Function,
                 &subject,
                 reason,
-                stat.lines,
+                (stat.lines - median_lines).max(0.0),
                 z / (z + OUTLIER_Z),
             )
             .measure("lines", stat.lines)
+            .measure("excessLines", (stat.lines - median_lines).max(0.0))
             .measure("tokens", stat.tokens)
             .measure("typicalLines", median_lines)
             .measure("robustZ", z)

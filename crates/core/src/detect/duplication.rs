@@ -2,12 +2,14 @@
 //! model confirmed do the same thing.
 //!
 //! The similarity analysis pairs the copies; this detector reads each connected group as one
-//! observation. A group is a finding in every file that holds a member, so the file's area can
-//! agree with other detectors, and each of those findings lists all the members as evidence so
-//! that every copy can be opened. Tests are held to the same engine; the reason says when the
-//! members are tests.
+//! finding, which is its own area: its mass is its copies' lines counted once and its evidence
+//! lists every copy. The group's id is a digest of the longest copy's content, so it holds while
+//! the other copies are edited, added or dropped. Tests are held to the same engine; the reason
+//! says when the members are tests.
 
-use super::{Context, Detector, Finding, SubjectKind, count, percent};
+use super::{
+    Context, Detector, Finding, count, distinct_lines_by_path, group_id, percent, places_title,
+};
 use crate::reader::QueryError;
 use crate::similarity::{Group, Member, groups};
 
@@ -31,7 +33,7 @@ impl Detector for Duplication {
         Ok(groups(context.index)?
             .iter()
             .filter(|group| group.lines_duplicated() >= DUPLICATED_LINES_MIN)
-            .flat_map(findings_of)
+            .map(finding_of)
             .collect())
     }
 }
@@ -68,73 +70,75 @@ fn number(value: usize) -> f64 {
     f64::from(u32::try_from(value).unwrap_or(u32::MAX))
 }
 
-/// One finding per file that holds a member of the group.
-fn findings_of(group: &Group) -> Vec<Finding> {
+/// One finding for the whole group: its mass is the lines duplicated beyond the largest copy,
+/// and its evidence lists every copy.
+fn finding_of(group: &Group) -> Finding {
     let noun = if group.is_test() { "test" } else { "function" };
-    let first = &group.members[0];
-    let subject = format!("{}::{}#{}", first.path, first.name, first.start_line);
     let (total, duplicated) = (group.lines_total(), group.lines_duplicated());
-    let mut files: Vec<&str> = group.members.iter().map(|m| m.path.as_str()).collect();
-    files.dedup();
-    files
-        .into_iter()
-        .map(|file| {
-            let here: u32 = group
+    let mass = f64::from(
+        distinct_lines_by_path(
+            group
                 .members
                 .iter()
-                .filter(|member| member.path == file)
-                .map(Member::lines)
-                .sum();
-            let mut finding = Finding::new(
-                "duplication",
-                SubjectKind::Group,
-                &subject,
-                reason(group, noun),
-                f64::from(here),
-                if group.exact { 1.0 } else { group.score_min },
-            )
-            .measure("members", number(group.members.len()))
-            .measure("files", number(group.file_count()))
-            .measure("totalLines", f64::from(total))
-            .measure("duplicatedLines", f64::from(duplicated))
-            .measure(
-                "largestLines",
-                f64::from(group.members[group.largest()].lines()),
-            )
-            .measure("similarity", group.score_min)
-            .fact(format!(
-                "{} lines in all, {} beyond the largest copy",
-                count(f64::from(total)),
-                count(f64::from(duplicated))
-            ))
-            .fact(if group.exact {
-                "identical apart from whitespace and comments".to_owned()
-            } else if let Some(probability) = group.model_score_min {
-                format!(
-                    "a model judged the weakest semantic link at least {} likely to do the same thing",
-                    percent(probability)
-                )
-            } else {
-                format!(
-                    "at least {} alike once names and constants are ignored",
-                    percent(group.score_min)
-                )
-            });
-            file.clone_into(&mut finding.area);
-            finding.labels.insert("kind".to_owned(), noun.to_owned());
-            finding.labels.insert(
-                "match".to_owned(),
-                match (group.exact, group.semantic) {
-                    (true, _) => "exact",
-                    (false, false) => "near",
-                    (false, true) => "semantic",
-                }
-                .to_owned(),
-            );
-            for member in &group.members {
-                finding = finding.evidence(&member.path, &[(member.start_line, member.end_line)]);
-            }
-            finding
-        })
-        .collect()
+                .map(|m| (m.path.as_str(), m.start_line, m.end_line)),
+        )
+        .values()
+        .sum::<u32>(),
+    );
+    let largest = &group.members[group.largest()];
+    // The longest copy's content names the group: it holds while the other copies are edited,
+    // added or dropped.
+    let key = [largest.content_hash.clone()];
+    let prefix = if group.semantic {
+        format!("Same {noun} in different words")
+    } else {
+        format!("Copies of {}", largest.name)
+    };
+    let mut finding = Finding::group(
+        "duplication",
+        &group_id("duplication", &key),
+        places_title(&prefix, group.members.len(), group.file_count()),
+        reason(group, noun),
+        mass,
+        if group.exact { 1.0 } else { group.score_min },
+    )
+    .measure("members", number(group.members.len()))
+    .measure("files", number(group.file_count()))
+    .measure("totalLines", f64::from(total))
+    .measure("duplicatedLines", f64::from(duplicated))
+    .measure("largestLines", f64::from(largest.lines()))
+    .measure("similarity", group.score_min)
+    .fact(format!(
+        "{} lines in all, {} beyond the largest copy",
+        count(f64::from(total)),
+        count(f64::from(duplicated))
+    ))
+    .fact(if group.exact {
+        "identical apart from whitespace and comments".to_owned()
+    } else if let Some(probability) = group.model_score_min {
+        format!(
+            "a model judged the weakest semantic link at least {} likely to do the same thing",
+            percent(probability)
+        )
+    } else {
+        format!(
+            "at least {} alike once names and constants are ignored",
+            percent(group.score_min)
+        )
+    });
+    finding = finding.members(group.members.iter().map(|m| m.key.clone()));
+    finding.labels.insert("kind".to_owned(), noun.to_owned());
+    finding.labels.insert(
+        "match".to_owned(),
+        match (group.exact, group.semantic) {
+            (true, _) => "exact",
+            (false, false) => "near",
+            (false, true) => "semantic",
+        }
+        .to_owned(),
+    );
+    for member in &group.members {
+        finding = finding.evidence(&member.path, &[(member.start_line, member.end_line)]);
+    }
+    finding
 }

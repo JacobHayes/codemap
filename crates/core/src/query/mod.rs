@@ -12,7 +12,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::detect::{Area, DETECTORS, Finding};
+use crate::detect::{
+    Area, DETECTORS, Finding, GROUP_ID_PREFIX, SubjectKind, distinct_lines_by_path,
+};
 use crate::measure::{self, Base, Filter, Measure, MeasureDef, MeasureRef, Term};
 use crate::reader::{Index, QueryError};
 use codemap_lang::{Concern, LANGUAGES, Role};
@@ -83,9 +85,11 @@ pub enum Query {
         #[serde(default)]
         filter: Filter,
     },
-    /// One area: its findings, measures, evidence and related areas.
+    /// One area: its findings, measures, evidence and related areas. For a file or directory
+    /// also the groups that touch it.
     Area {
-        /// A file or directory path; a `path::function` subject names its file.
+        /// A file or directory path (a `path::function` subject names its file), or a group's
+        /// id.
         subject: String,
     },
     /// One file's lines with their role and concern, and the finding ranges that touch them.
@@ -108,10 +112,25 @@ pub enum Query {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "Answer.ts")]
 pub struct AreaDetail {
-    pub area: Area,
+    /// Absent when a path has no area of its own and is only part of groups.
+    pub area: Option<Area>,
     pub findings: Vec<Finding>,
-    /// Areas above or below this one in the tree.
+    /// Areas above or below this one in the tree; for a group, the areas of the files it spans.
     pub related: Vec<Area>,
+    /// For a file or directory: the groups with a member in it, best first.
+    pub groups: Vec<GroupShare>,
+}
+
+/// A group touching a location, and how much of the group lies there.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "Answer.ts")]
+pub struct GroupShare {
+    pub group: Area,
+    /// The group's evidence lines inside the location.
+    pub lines: u32,
+    /// Those lines as a share of all the group's evidence lines, 0 to 1.
+    pub share: f64,
 }
 
 /// The ranked areas under a filter.
@@ -388,12 +407,16 @@ fn areas(
     filter: &Filter,
 ) -> Result<Answer, QueryError> {
     validate(filter)?;
-    let path = filter.path.as_deref();
+    let path = filter
+        .path
+        .as_deref()
+        .filter(|p| !p.trim_matches('/').is_empty());
     let touched = lines_filtered(filter)
         .then(|| index.touched_by(filter))
         .transpose()?;
+    // A location area is found by its subject, a group area by its members.
     let mut findings: BTreeMap<String, Vec<Finding>> = BTreeMap::new();
-    if touched.is_some() {
+    if touched.is_some() || path.is_some() {
         for finding in index.all_findings()? {
             findings
                 .entry(finding.area.clone())
@@ -401,17 +424,23 @@ fn areas(
                 .push(finding);
         }
     }
+    let own = |area: &Area| findings.get(&area.subject).map_or(&[][..], Vec::as_slice);
     let matching: Vec<Area> = index
         .areas()?
         .into_iter()
-        .filter(|area| path.is_none_or(|prefix| under(&area.subject, prefix)))
+        .filter(|area| {
+            path.is_none_or(|prefix| match area.subject_kind {
+                SubjectKind::Group => own(area)
+                    .iter()
+                    .any(|f| f.evidence.iter().any(|e| under(&e.path, prefix))),
+                _ => under(&area.subject, prefix),
+            })
+        })
         .filter(|area| detector.is_none_or(|name| area.detectors.iter().any(|d| d == name)))
         .filter(|area| {
-            touched.as_ref().is_none_or(|touched| {
-                findings
-                    .get(&area.subject)
-                    .is_some_and(|own| own.iter().any(|finding| touched.touches(finding)))
-            })
+            touched
+                .as_ref()
+                .is_none_or(|touched| own(area).iter().any(|finding| touched.touches(finding)))
         })
         .collect();
     let acknowledged = matching.iter().filter(|a| a.acknowledged.is_some()).count();
@@ -432,28 +461,94 @@ fn lines_filtered(filter: &Filter) -> bool {
 }
 
 fn area(index: &Index, subject: &str) -> Result<AreaDetail, QueryError> {
+    let all = index.areas()?;
+    if subject.starts_with(GROUP_ID_PREFIX) {
+        return group_detail(index, subject, all);
+    }
     let path = subject
         .split_once("::")
         .map_or(subject, |(path, _)| path)
         .trim_matches('/');
-    let all = index.areas()?;
-    let found = all
-        .iter()
-        .find(|area| area.subject == path)
-        .ok_or_else(|| QueryError::UnknownArea(subject.to_owned()))?
-        .clone();
+    let found = all.iter().find(|area| area.subject == path).cloned();
+    let groups = groups_touching(index, path, &all)?;
+    if found.is_none() && groups.is_empty() {
+        return Err(QueryError::UnknownArea(subject.to_owned()));
+    }
     let related = all
         .into_iter()
         .filter(|other| {
-            other.subject != found.subject
-                && (under(&other.subject, &found.subject) || under(&found.subject, &other.subject))
+            other.subject_kind != SubjectKind::Group
+                && other.subject != path
+                && (under(&other.subject, path) || under(path, &other.subject))
         })
         .collect();
     Ok(AreaDetail {
-        findings: index.findings_of(&found.subject)?,
+        findings: index.findings_of(path)?,
         area: found,
         related,
+        groups,
     })
+}
+
+fn group_detail(index: &Index, id: &str, all: Vec<Area>) -> Result<AreaDetail, QueryError> {
+    let found = all
+        .iter()
+        .find(|area| area.subject == id)
+        .ok_or_else(|| QueryError::UnknownArea(id.to_owned()))?
+        .clone();
+    let findings = index.findings_of(id)?;
+    let related = all
+        .into_iter()
+        .filter(|other| {
+            other.subject_kind != SubjectKind::Group
+                && findings
+                    .iter()
+                    .flat_map(|f| &f.evidence)
+                    .any(|e| under(&e.path, &other.subject))
+        })
+        .collect();
+    Ok(AreaDetail {
+        area: Some(found),
+        findings,
+        related,
+        groups: Vec::new(),
+    })
+}
+
+/// The groups with evidence inside `path`, and how much of each lies there.
+fn groups_touching(index: &Index, path: &str, all: &[Area]) -> Result<Vec<GroupShare>, QueryError> {
+    let ranges = |finding: &Finding| -> Vec<(String, u32, u32)> {
+        finding
+            .evidence
+            .iter()
+            .map(|e| (e.path.clone(), e.start_line, e.end_line))
+            .collect()
+    };
+    let lines = |ranges: &[(String, u32, u32)], inside: bool| -> u32 {
+        distinct_lines_by_path(
+            ranges
+                .iter()
+                .filter(|(p, _, _)| !inside || under(p, path))
+                .map(|(p, start, end)| (p.as_str(), *start, *end)),
+        )
+        .values()
+        .sum()
+    };
+    let mut shares = Vec::new();
+    for finding in index.group_findings()? {
+        let ranges = ranges(&finding);
+        let (here, total) = (lines(&ranges, true), lines(&ranges, false));
+        let group = all.iter().find(|area| area.subject == finding.area);
+        if let (Some(group), true) = (group, here > 0) {
+            shares.push(GroupShare {
+                group: group.clone(),
+                lines: here,
+                share: f64::from(here) / f64::from(total.max(1)),
+            });
+        }
+    }
+    shares.sort_by_key(|share| share.group.rank);
+    Ok(shares)
 }
 
 fn catalog() -> Catalog {

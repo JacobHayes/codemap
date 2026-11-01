@@ -12,7 +12,7 @@ mod robust;
 mod rules;
 mod size;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -32,7 +32,7 @@ pub enum SubjectKind {
     Directory,
     File,
     Function,
-    /// Copies of one function, as a duplicate group.
+    /// A pattern spanning places (copies, a naming family, a repeated switch): its own area.
     Group,
 }
 
@@ -65,13 +65,15 @@ pub struct Evidence {
 #[ts(export, export_to = "Answer.ts")]
 pub struct Finding {
     pub detector: String,
-    /// A directory or file path, or `path::name` for a function.
+    /// A directory or file path, `path::name` for a function, or a group's id.
     pub subject: String,
     pub subject_kind: SubjectKind,
-    /// The file or directory whose area this finding belongs to.
+    /// The area this finding belongs to: the file or directory it sits in, or for a group its
+    /// id.
     pub area: String,
     pub reason: String,
-    /// The lines the finding points at; weighs the area's opportunity.
+    /// What weighs the area's opportunity: a group's lines counted once, a place's lines beyond
+    /// what its peers' median would hold.
     pub mass_lines: f64,
     /// 0 to 1; breaks ties, never hides.
     pub confidence: f64,
@@ -112,6 +114,39 @@ impl Finding {
         }
     }
 
+    /// A finding about a group: the pattern is its own area, named by `id` and `title`, and
+    /// its evidence lists every member.
+    pub(crate) fn group(
+        detector: &str,
+        id: &str,
+        title: String,
+        reason: String,
+        mass_lines: f64,
+        confidence: f64,
+    ) -> Self {
+        let mut finding = Self::new(
+            detector,
+            SubjectKind::Group,
+            id,
+            reason,
+            mass_lines,
+            confidence,
+        );
+        id.clone_into(&mut finding.area);
+        finding.labels.insert(TITLE_LABEL.to_owned(), title);
+        finding
+    }
+
+    /// Names the group's members for acknowledgements that outlive the group's id.
+    pub(crate) fn members(mut self, members: impl IntoIterator<Item = String>) -> Self {
+        let members: BTreeSet<String> = members.into_iter().collect();
+        self.labels.insert(
+            MEMBERS_LABEL.to_owned(),
+            members.into_iter().collect::<Vec<_>>().join("\n"),
+        );
+        self
+    }
+
     pub(crate) fn measure(mut self, name: &str, value: f64) -> Self {
         self.measures.insert(name.to_owned(), value);
         self
@@ -131,6 +166,68 @@ impl Finding {
             }));
         self
     }
+}
+
+/// The label a group finding carries its area's title in.
+pub(crate) const TITLE_LABEL: &str = "title";
+
+/// The label a group finding lists its members in, one per line: what an acknowledgement
+/// matches by when the group's id no longer exists.
+pub(crate) const MEMBERS_LABEL: &str = "members";
+
+/// Prefix of a group's id, which tells it from a path.
+pub const GROUP_ID_PREFIX: &str = "group:";
+
+/// A group's id: the detector and a digest of the group's natural `key`, which each detector
+/// chooses so that it survives what happens while a group is worked on (a member edited, one
+/// added or gone). The key parts are sorted and deduplicated here, so order never matters.
+#[must_use]
+pub(crate) fn group_id(detector: &str, key: &[String]) -> String {
+    let mut key: Vec<&str> = key.iter().map(String::as_str).collect();
+    key.sort_unstable();
+    key.dedup();
+    let mut hasher = blake3::Hasher::new();
+    for part in key {
+        hasher.update(part.as_bytes());
+        hasher.update(&[0]);
+    }
+    let digest = hasher.finalize().to_hex();
+    format!("{GROUP_ID_PREFIX}{detector}:{}", &digest.as_str()[..12])
+}
+
+/// "`prefix`: 3 places in 2 files".
+pub(crate) fn places_title(prefix: &str, places: usize, files: usize) -> String {
+    let s = |n: usize| if n == 1 { "" } else { "s" };
+    format!(
+        "{prefix}: {places} place{} in {files} file{}",
+        s(places),
+        s(files)
+    )
+}
+
+/// Distinct lines of line ranges per file, counting a line in nested ranges once.
+pub(crate) fn distinct_lines_by_path<'a>(
+    ranges: impl Iterator<Item = (&'a str, u32, u32)>,
+) -> BTreeMap<&'a str, u32> {
+    let mut by_path: BTreeMap<&str, Vec<(u32, u32)>> = BTreeMap::new();
+    for (path, start, end) in ranges {
+        by_path.entry(path).or_default().push((start, end));
+    }
+    by_path
+        .into_iter()
+        .map(|(path, mut ranges)| {
+            ranges.sort_unstable();
+            let (mut total, mut reached) = (0, 0);
+            for (start, end) in ranges {
+                let start = start.max(reached + 1);
+                if end >= start {
+                    total += end - start + 1;
+                    reached = end;
+                }
+            }
+            (path, total)
+        })
+        .collect()
 }
 
 /// Everything a detector may read.

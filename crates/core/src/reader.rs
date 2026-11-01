@@ -299,6 +299,31 @@ impl Index {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
+    /// A key per symbol id that survives edits elsewhere in the file: the path, the names from
+    /// the outermost scope in, and which of the identically named symbols it is. Group
+    /// identities and acknowledgements use it for their members.
+    pub(crate) fn member_keys(&self) -> Result<BTreeMap<String, String>, QueryError> {
+        let symbols = self.symbols()?;
+        let by_id: BTreeMap<&str, &SymbolRow> =
+            symbols.iter().map(|s| (s.id.as_str(), s)).collect();
+        let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+        let mut keys = BTreeMap::new();
+        for symbol in &symbols {
+            let mut names = vec![symbol.name.as_str()];
+            let mut at = symbol.parent.as_deref().and_then(|id| by_id.get(id));
+            while let Some(parent) = at {
+                names.push(parent.name.as_str());
+                at = parent.parent.as_deref().and_then(|id| by_id.get(id));
+            }
+            names.reverse();
+            let base = format!("{}::{}", symbol.path, names.join("::"));
+            let nth = seen.entry(base.clone()).or_default();
+            keys.insert(symbol.id.clone(), format!("{base}#{nth}"));
+            *nth += 1;
+        }
+        Ok(keys)
+    }
+
     /// The longest runs of consecutive lines of a file where `column` equals `value`.
     pub(crate) fn runs(
         &self,

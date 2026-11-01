@@ -75,7 +75,8 @@ detector?: string,
  */
 filter: Filter, } | { "kind": "area", 
 /**
- * A file or directory path; a `path::function` subject names its file.
+ * A file or directory path (a `path::function` subject names its file), or a group's
+ * id.
  */
 subject: string, } | { "kind": "source", 
 /**

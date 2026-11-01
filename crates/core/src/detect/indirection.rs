@@ -17,14 +17,16 @@
 //!   generic parameter, counts as many). An abstraction whose name also resolves to
 //!   others with low confidence is skipped, because its implementors cannot be counted.
 //!
-//! A finding that spans files is a finding in each of them, listing every part as evidence, so
-//! each file's area can agree with other detectors.
+//! A chain of several wrappers and an abstraction with its implementation are groups: one
+//! finding, its own area, listing every part as evidence. A lone wrapper is a finding in its
+//! file. A chain's id is a digest of its outermost wrapper's path and name and an abstraction's
+//! of its own, so they hold while the rest of the group changes.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use codemap_lang::Role;
 
-use super::{Context, Detector, Finding, SubjectKind, count, is_ranked};
+use super::{Context, Detector, Finding, SubjectKind, count, group_id, is_ranked, places_title};
 use crate::link::{Edge, IMPLEMENTATION, edges};
 use crate::reader::{Index, QueryError, SymbolRow};
 
@@ -90,6 +92,8 @@ struct Population {
     symbols: Vec<SymbolRow>,
     by_id: BTreeMap<String, usize>,
     edges: Vec<Edge>,
+    /// Scope-qualified keys by symbol id, for group identities.
+    keys: BTreeMap<String, String>,
 }
 
 impl Population {
@@ -104,7 +108,12 @@ impl Population {
             symbols,
             by_id,
             edges: edges(index)?,
+            keys: index.member_keys()?,
         })
+    }
+
+    fn key(&self, symbol: &SymbolRow) -> String {
+        self.keys.get(&symbol.id).cloned().unwrap_or_default()
     }
 
     fn get(&self, id: &str) -> Option<&SymbolRow> {
@@ -228,7 +237,7 @@ fn chains<'a>(population: &'a Population, wrappers: &Wrappers<'a>) -> Vec<Chain<
 fn chain_findings(population: &Population, wrappers: &Wrappers) -> Vec<Finding> {
     chains(population, wrappers)
         .iter()
-        .flat_map(chain_findings_of)
+        .map(|chain| chain_finding(chain, population))
         .collect()
 }
 
@@ -249,51 +258,59 @@ fn chain_reason(chain: &Chain) -> String {
     )
 }
 
-/// One finding per file that holds a wrapper of the chain.
-fn chain_findings_of(chain: &Chain) -> Vec<Finding> {
+/// One finding for the chain; a lone wrapper is a function in its file, a longer chain a group.
+fn chain_finding(chain: &Chain, population: &Population) -> Finding {
     let head = chain.wrappers[0];
-    let kind = if chain.wrappers.len() == 1 {
-        SubjectKind::Function
-    } else {
-        SubjectKind::Group
-    };
     let total: u32 = chain.wrappers.iter().map(|symbol| lines(symbol)).sum();
     let files: BTreeSet<&str> = chain.wrappers.iter().map(|s| s.path.as_str()).collect();
-    files
-        .iter()
-        .map(|&file| {
-            let here: u32 = chain
-                .wrappers
-                .iter()
-                .filter(|symbol| symbol.path == file)
-                .map(|symbol| lines(symbol))
-                .sum();
-            let mut finding = Finding::new(
-                "indirection",
-                kind,
-                &subject(head),
-                chain_reason(chain),
-                f64::from(here),
-                chain.confidence,
-            )
-            .measure("chainLength", number(chain.wrappers.len()))
-            .measure("files", number(files.len()))
-            .measure("wrapperLines", f64::from(total))
-            .fact(format!(
-                "{} line{} of wrapper in all",
-                count(f64::from(total)),
-                if total == 1 { "" } else { "s" }
-            ));
-            file.clone_into(&mut finding.area);
-            finding
-                .labels
-                .insert("signal".to_owned(), "pass_through".to_owned());
-            for symbol in chain.wrappers.iter().chain([&chain.worker]) {
-                finding = finding.evidence(&symbol.path, &[(symbol.start_line, symbol.end_line)]);
-            }
-            finding
-        })
-        .collect()
+    let (reason, confidence) = (chain_reason(chain), chain.confidence);
+    let mut finding = if chain.wrappers.len() == 1 {
+        Finding::new(
+            "indirection",
+            SubjectKind::Function,
+            &subject(head),
+            reason,
+            f64::from(total),
+            confidence,
+        )
+    } else {
+        // The outermost wrapper names the chain: inner links come and go.
+        let outermost = [population.key(head)];
+        Finding::group(
+            "indirection",
+            &group_id("indirection", &outermost),
+            places_title(
+                &format!("Pass-through chain to {}", chain.worker.name),
+                chain.wrappers.len(),
+                files.len(),
+            ),
+            reason,
+            f64::from(total),
+            confidence,
+        )
+    }
+    .measure("chainLength", number(chain.wrappers.len()))
+    .measure("files", number(files.len()))
+    .measure("wrapperLines", f64::from(total))
+    .fact(format!(
+        "{} line{} of wrapper in all",
+        count(f64::from(total)),
+        if total == 1 { "" } else { "s" }
+    ));
+    finding
+        .labels
+        .insert("signal".to_owned(), "pass_through".to_owned());
+    finding = finding.members(
+        chain
+            .wrappers
+            .iter()
+            .chain([&chain.worker])
+            .map(|s| population.key(s)),
+    );
+    for symbol in chain.wrappers.iter().chain([&chain.worker]) {
+        finding = finding.evidence(&symbol.path, &[(symbol.start_line, symbol.end_line)]);
+    }
+    finding
 }
 
 fn abstraction_findings(population: &Population) -> Vec<Finding> {
@@ -328,41 +345,43 @@ fn abstraction_findings(population: &Population) -> Vec<Finding> {
                 return None;
             }
             let only = production.first()?;
-            (distinct.len() == 1).then(|| abstraction_findings_of(abstraction, only))
+            (distinct.len() == 1).then(|| abstraction_finding(abstraction, only, population))
         })
-        .flatten()
         .collect()
 }
 
-/// One finding per file of the pair, each pointing at both.
-fn abstraction_findings_of(abstraction: &SymbolRow, only: &SymbolRow) -> Vec<Finding> {
+/// One finding for the pair, pointing at both.
+fn abstraction_finding(
+    abstraction: &SymbolRow,
+    only: &SymbolRow,
+    population: &Population,
+) -> Finding {
     let files: BTreeSet<&str> = [abstraction.path.as_str(), only.path.as_str()].into();
-    files
-        .into_iter()
-        .map(|file| {
-            let mut finding = Finding::new(
-                "indirection",
-                SubjectKind::Group,
-                &subject(abstraction),
-                format!(
-                    "`{}` has a single implementation, `{}`.",
-                    abstraction.name, only.name
-                ),
-                f64::from(lines(abstraction)),
-                1.0,
-            )
-            .measure("implementors", 1.0)
-            .measure("abstractionLines", f64::from(lines(abstraction)))
-            .evidence(
-                &abstraction.path,
-                &[(abstraction.start_line, abstraction.end_line)],
-            )
-            .evidence(&only.path, &[(only.start_line, only.end_line)]);
-            file.clone_into(&mut finding.area);
-            finding
-                .labels
-                .insert("signal".to_owned(), "single_implementation".to_owned());
-            finding
-        })
-        .collect()
+    let mut finding = Finding::group(
+        "indirection",
+        &group_id("indirection", &[population.key(abstraction)]),
+        places_title(
+            &format!("Single implementation of {}", abstraction.name),
+            2,
+            files.len(),
+        ),
+        format!(
+            "`{}` has a single implementation, `{}`.",
+            abstraction.name, only.name
+        ),
+        f64::from(lines(abstraction)),
+        1.0,
+    )
+    .measure("implementors", 1.0)
+    .measure("abstractionLines", f64::from(lines(abstraction)))
+    .evidence(
+        &abstraction.path,
+        &[(abstraction.start_line, abstraction.end_line)],
+    )
+    .evidence(&only.path, &[(only.start_line, only.end_line)])
+    .members([population.key(abstraction), population.key(only)]);
+    finding
+        .labels
+        .insert("signal".to_owned(), "single_implementation".to_owned());
+    finding
 }

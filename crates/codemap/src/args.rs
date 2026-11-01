@@ -199,7 +199,7 @@ pub struct AreasArgs {
     #[arg(long, default_value_t = TOP_DEFAULT)]
     #[serde(default = "top_default")]
     pub top: u32,
-    /// Only areas at or under this path.
+    /// Only areas at or under this path; a group stays when any member is under it.
     #[arg(long)]
     pub path: Option<String>,
     /// Only areas this detector found something in.
@@ -236,7 +236,7 @@ impl AreasArgs {
 #[derive(Debug, Args, Deserialize, JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
 pub struct AreaArgs {
-    /// A file or directory path, as `areas` prints it.
+    /// A file or directory path, or a group id (`group:...`), as `areas` prints it.
     pub subject: String,
 }
 

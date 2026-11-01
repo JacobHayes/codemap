@@ -39,6 +39,10 @@ export function plain(value: number): string {
   return String(Number(value.toPrecision(abs >= 100 ? 3 : 2)));
 }
 
+/** A share from 0 to 1 as a whole percent: `0.4` is "40%", and a sliver is "under 1%". */
+export const percentOf = (share: number): string =>
+  share > 0 && share < 0.005 ? 'under 1%' : `${String(Math.round(share * 100))}%`;
+
 /** A count with its noun: "1 row", "5 rows". */
 export const counted = (n: number, noun: string): string =>
   `${String(n)} ${noun}${n === 1 ? '' : 's'}`;

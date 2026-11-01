@@ -190,12 +190,42 @@ flowchart LR
 
 ## Detectors, findings and areas
 
-A **finding** is one detector's observation about a subject (a path, a symbol, or a group such as
-a duplicate cluster), with the measures that triggered it, evidence (line ranges, related
-symbols) and a reason in words. It carries no verdict.
+A **finding** is one detector's observation about a subject, with the measures that triggered
+it, evidence (line ranges, related symbols) and a reason in words. It carries no verdict. The
+subject is a **location** (a path, or a function in a path) or a **group**: a pattern spanning
+places, such as a duplicate cluster, a naming family, a repeated switch, a pass-through chain or
+an abstraction with its one implementation. A group is one finding, never one per file it
+touches.
 
-An **area** is a subject with one or more findings. Its **opportunity** grows with the number of
-distinct detectors that agree and with the mass involved; confidence only breaks ties.
+An **area** is a subject with one or more findings, and its subject is either:
+
+- **a location**, a file or directory. Detectors that agree on it combine into one area: its
+  **opportunity** grows with the number of distinct detectors that agree and with the mass
+  involved; confidence only breaks ties.
+- **a group**, which is its own area whatever the number of files it spans. Its evidence lists
+  every member's file and line ranges, its mass is the group's lines (duplicated lines for
+  copies, the members' distinct lines otherwise), and its title says what the pattern is and
+  how many places and files it spans. One detector found it, so it ranks on its mass.
+
+A group stays visible from the places it touches. `Area` on a file or directory lists the groups
+with a member inside it, each with the lines that lie there and their share of the group's
+lines; the source viewer's finding ranges link to the group's area; and every area filter (path,
+role, concern, language, detector) keeps a group when any of its evidence matches, as it keeps a
+location when any of its findings does.
+
+A **group id** (`group:<detector>:<digest>`) names a group for `area`, links and
+acknowledgements. It is a digest of the group's natural key, which its detector owns and which
+holds while the group is worked on: the case set for a repeated switch, the stem and kind for a
+naming family, the longest copy's content for a duplicate cluster, the outermost symbol for a
+wrapper chain and the abstraction for a single implementation. A finding also lists its members.
+An acknowledgement by group names the id and the members it saw; when no group has that id any
+more (the longest copy was edited, say), it falls back to the group of the same detector that
+shares at least half of its members with them, so acknowledgements survive an edited copy, a
+new site or a near copy dropping out.
+
+A group ranks by its sites' lines counted once. A place that reports disproportion (composition,
+size) ranks by its excess over the peer median, not its total, so a large directory does not
+outrank every pattern for its size alone.
 
 Detectors compare the codebase with itself by default, and a subject with its peers: a file
 against the files, a directory against the directories, a function against the functions. "Unusual"
@@ -205,8 +235,9 @@ for everyone. Two project inputs adjust this:
 
 - **Rules** set a threshold on one measure at one granularity ("handling lines per function at
   least 100"). Rules are one generic detector driven by configuration.
-- **Acknowledgements** mark areas whose complexity is essential, optionally per detector, with a
-  reason. Acknowledged areas stay visible, ranked after the rest, and counted.
+- **Acknowledgements** mark areas whose complexity is essential, with a reason, by `path` (a
+  location, and the groups whose every member lies under it) or by `group` (a group id, with
+  the `members` it listed), and optionally per detector. Acknowledged areas stay visible, ranked after the rest, and counted.
 
 ## Inference
 
@@ -247,8 +278,8 @@ surfaces cannot drift.
 | `Overview` | Totals and shares by role, concern and language; counts of areas by detector |
 | `Tree` | A hierarchy (path or symbol) with a size measure and a colour measure, under filters |
 | `Xtab` | Two dimensions crossed, one measure per cell, under filters |
-| `Areas` | Ranked areas, top N, under a path and a detector, and under the line filters (role, concern, language): an area stays when one of its findings points at a line that passes them |
-| `Area` | One area: findings, measures, evidence, related areas |
+| `Areas` | Ranked areas, top N, under a path and a detector, and under the line filters (role, concern, language): an area stays when one of its findings points at a line that passes them, and a group stays when any member does |
+| `Area` | One area, by path or group id: findings, measures, evidence, related areas, and for a path the groups that touch it |
 | `Source` | One file's lines (a page at a time) with role, concern and finding ranges; the text is read from the file and refused when it changed since indexing |
 | `Catalog` | Dimensions, measures and detectors available |
 
