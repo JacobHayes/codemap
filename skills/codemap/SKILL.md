@@ -58,7 +58,8 @@ your session.
 ## 2. Triage
 
 1. `codemap areas --top 15 --json`: ranked areas, each with the detectors that flagged it and
-   why. Narrow with `--path <dir>` or `--detector <name>`; `codemap catalog` lists
+   why. Narrow with `--path <dir>`, `--detector <name>` or the lines the findings touch:
+   `--role test`, `--concern handler`, `--language rust`; `codemap catalog` lists
    detectors, measures and dimensions.
 2. `codemap area <subject> --json`: the findings, evidence (line ranges) and related areas
    for one file or directory exactly as `areas` printed it.

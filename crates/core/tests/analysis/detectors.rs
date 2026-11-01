@@ -1,6 +1,6 @@
 //! Each detector fires on a tree built to trip it and stays quiet on one that is uniform.
 
-use codemap_core::{Answer, Query, SubjectKind, answer};
+use codemap_core::{Answer, Filter, Query, QueryError, SubjectKind, answer};
 
 use crate::common::{
     areas, baseline, baseline_dirs, findings_of, handler_functions, indexed, plain_functions, write,
@@ -372,4 +372,68 @@ fn role_overrides_apply_at_index_time() {
             .iter()
             .any(|s| s.name == "generated" && s.lines == 300)
     );
+}
+
+#[test]
+fn areas_filter_by_the_lines_their_findings_touch() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline_dirs(dir.path(), 20);
+    for i in 0..3 {
+        write(
+            dir.path(),
+            &format!("handlers/h{i}.rs"),
+            &handler_functions(&format!("h{i}_"), 20),
+        );
+    }
+    let index = indexed(dir.path());
+    let subjects = |filter: Filter| -> Vec<String> {
+        match answer(
+            &index,
+            &Query::Areas {
+                top: None,
+                detector: None,
+                filter,
+            },
+        ) {
+            Ok(Answer::Areas(list)) => list.areas.into_iter().map(|a| a.subject).collect(),
+            other => panic!("not areas: {other:?}"),
+        }
+    };
+    let by = |role: Option<&str>, concern: Option<&str>, language: Option<&str>| {
+        subjects(Filter {
+            role: role.map(str::to_owned),
+            concern: concern.map(str::to_owned),
+            language: language.map(str::to_owned),
+            ..Filter::default()
+        })
+    };
+    let all = subjects(Filter::default());
+    assert!(all.iter().any(|s| s == "handlers"));
+
+    let handling = by(None, Some("handler"), None);
+    assert!(handling.iter().any(|s| s == "handlers"));
+    assert!(by(None, Some("assertion"), None).is_empty());
+
+    assert_eq!(by(None, None, Some("rust")), all);
+    assert!(by(None, None, Some("python")).is_empty());
+    assert!(by(Some("test"), None, None).is_empty());
+    assert!(
+        by(Some("prod"), Some("handler"), None)
+            .iter()
+            .any(|s| s == "handlers")
+    );
+    assert!(matches!(
+        answer(
+            &index,
+            &Query::Areas {
+                top: None,
+                detector: None,
+                filter: Filter {
+                    role: Some("nonsense".to_owned()),
+                    ..Filter::default()
+                },
+            }
+        ),
+        Err(QueryError::UnknownValue { .. })
+    ));
 }

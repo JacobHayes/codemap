@@ -24,7 +24,7 @@ async function internalIds(request: APIRequestContext): Promise<string[]> {
     for (const d of catalog.detectors) ids.add(d.name);
     for (const d of catalog.dimensions) ids.add(d.name);
   }
-  const areas = await ask(request, { kind: 'areas' });
+  const areas = await ask(request, { kind: 'areas', filter: { includeGenerated: false } });
   if (areas.kind === 'areas') {
     for (const area of areas.areas) {
       const detail = await ask(request, { kind: 'area', subject: area.subject });

@@ -2,6 +2,7 @@ import type { Area, AreaDetail, AreaList, Finding } from '../generated/Answer';
 import { amount, words } from '../format';
 import { around, formatLines } from '../source';
 import { useAnswer } from '../useAnswer';
+import { filterOf } from '../query';
 import { hasFilters, type Navigate, type UrlState } from '../urlState';
 import { Link } from './Link';
 
@@ -166,8 +167,7 @@ function Summary({
         {list.acknowledged > 0 && `, ${String(list.acknowledged)} acknowledged and listed last`}
         {'. '}
         {hidden > 0 &&
-          `${String(hidden)} more ${hidden === 1 ? 'area is' : 'areas are'} hidden by the drill path. `}
-        {hasFilters(state) && 'The filters apply to the map and cross-tab only. '}
+          `${String(hidden)} more ${hidden === 1 ? 'area is' : 'areas are'} hidden by the drill path or filters. `}
         Select a path to show it on the map.
       </p>
       {semantic !== '' && <p className="muted">{semantic}</p>}
@@ -177,8 +177,9 @@ function Summary({
 
 /** The ranked areas: each card says where, why, who agrees and how much; evidence folds out. */
 export function AreaQueue({ state, navigate }: Common) {
+  // Generated and vendored lines count only when a role names them, so that flag stays off.
   const areas = useAnswer(
-    state.path === '' ? { kind: 'areas' } : { kind: 'areas', path: state.path },
+    { kind: 'areas', filter: { ...filterOf(state), includeGenerated: false } },
     'areas',
   );
   const overview = useAnswer({ kind: 'overview' }, 'overview');
@@ -202,7 +203,18 @@ export function AreaQueue({ state, navigate }: Common) {
     >
       <Summary list={list} total={total} state={state} semantic={semantic} />
       {list.areas.length === 0 ? (
-        <p>No areas stand out here.</p>
+        <div className="empty">
+          <p>No areas stand out here.</p>
+          {hasFilters(state) && (
+            <button
+              onClick={() => {
+                navigate({ role: null, concern: null, language: null, kind: null, area: null });
+              }}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
       ) : (
         <ol className="area-list">
           {list.areas.map((area) => (

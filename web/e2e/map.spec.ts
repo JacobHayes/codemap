@@ -101,3 +101,15 @@ test('generated and vendored code is hidden until its chip is removed, and back'
   await expect(page).toHaveURL(/^[^?]*$/);
   await expect(hiding).toBeVisible();
 });
+
+test('a filter narrows the area queue and the address carries it', async ({ page }) => {
+  await page.goto('/?view=areas');
+  await expect(page.locator('.areas')).toHaveAttribute('data-state', 'ready');
+  const all = await page.locator('.area-list > li').count();
+  await page.getByLabel('Add a filter').selectOption('role=test');
+  await expect(page).toHaveURL(/view=areas.*role=test|role=test.*view=areas/);
+  await expect(page.locator('.areas')).toHaveAttribute('data-state', 'ready');
+  expect(await page.locator('.area-list > li').count()).toBeLessThanOrEqual(all);
+  await page.getByRole('button', { name: 'Remove filter role test' }).click();
+  await expect(page).not.toHaveURL(/role=/);
+});

@@ -205,6 +205,15 @@ pub struct AreasArgs {
     /// Only areas this detector found something in.
     #[arg(long)]
     pub detector: Option<String>,
+    /// Only areas whose findings touch lines of this role, such as `test`.
+    #[arg(long)]
+    pub role: Option<String>,
+    /// Only areas whose findings touch lines with this concern.
+    #[arg(long)]
+    pub concern: Option<String>,
+    /// Only areas whose findings touch lines in this language.
+    #[arg(long)]
+    pub language: Option<String>,
 }
 
 impl AreasArgs {
@@ -212,8 +221,14 @@ impl AreasArgs {
     pub fn query(self) -> Query {
         Query::Areas {
             top: Some(self.top),
-            path: self.path,
             detector: self.detector,
+            filter: Filter {
+                path: self.path,
+                language: self.language,
+                role: self.role,
+                concern: self.concern,
+                ..Filter::default()
+            },
         }
     }
 }

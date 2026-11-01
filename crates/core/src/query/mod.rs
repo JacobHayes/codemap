@@ -7,6 +7,8 @@ mod source;
 mod tree;
 mod xtab;
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -72,12 +74,14 @@ pub enum Query {
         /// How many to list; all when absent.
         #[serde(default)]
         top: Option<u32>,
-        /// Only areas at or under this path.
-        #[serde(default)]
-        path: Option<String>,
         /// Only areas this detector found something in.
         #[serde(default)]
         detector: Option<String>,
+        /// Only areas at or under `path` whose findings touch lines that pass the rest of the
+        /// filter (language, role, concern, symbol kind). Generated and vendored lines count
+        /// only when named; `include_generated` has no effect here.
+        #[serde(default)]
+        filter: Filter,
     },
     /// One area: its findings, measures, evidence and related areas.
     Area {
@@ -216,9 +220,9 @@ pub fn answer(index: &Index, query: &Query) -> Result<Answer, QueryError> {
         } => source::source(index, path, *start_line, *end_line).map(Answer::Source),
         Query::Areas {
             top,
-            path,
             detector,
-        } => areas(index, *top, path.as_deref(), detector.as_deref()),
+            filter,
+        } => areas(index, *top, detector.as_deref(), filter),
         Query::Area { subject } => area(index, subject).map(Answer::Area),
         Query::Catalog => Ok(Answer::Catalog(catalog())),
     }
@@ -380,14 +384,35 @@ fn under(path: &str, prefix: &str) -> bool {
 fn areas(
     index: &Index,
     top: Option<u32>,
-    path: Option<&str>,
     detector: Option<&str>,
+    filter: &Filter,
 ) -> Result<Answer, QueryError> {
+    validate(filter)?;
+    let path = filter.path.as_deref();
+    let touched = lines_filtered(filter)
+        .then(|| index.touched_by(filter))
+        .transpose()?;
+    let mut findings: BTreeMap<String, Vec<Finding>> = BTreeMap::new();
+    if touched.is_some() {
+        for finding in index.all_findings()? {
+            findings
+                .entry(finding.area.clone())
+                .or_default()
+                .push(finding);
+        }
+    }
     let matching: Vec<Area> = index
         .areas()?
         .into_iter()
         .filter(|area| path.is_none_or(|prefix| under(&area.subject, prefix)))
         .filter(|area| detector.is_none_or(|name| area.detectors.iter().any(|d| d == name)))
+        .filter(|area| {
+            touched.as_ref().is_none_or(|touched| {
+                findings
+                    .get(&area.subject)
+                    .is_some_and(|own| own.iter().any(|finding| touched.touches(finding)))
+            })
+        })
         .collect();
     let acknowledged = matching.iter().filter(|a| a.acknowledged.is_some()).count();
     let shown = top.map_or(matching.len(), |n| n as usize);
@@ -396,6 +421,14 @@ fn areas(
         acknowledged: u32::try_from(acknowledged).unwrap_or(u32::MAX),
         areas: matching.into_iter().take(shown).collect(),
     }))
+}
+
+/// Whether the filter narrows lines, beyond the path that narrows areas themselves.
+fn lines_filtered(filter: &Filter) -> bool {
+    filter.language.is_some()
+        || filter.role.is_some()
+        || filter.concern.is_some()
+        || filter.symbol_kind.is_some()
 }
 
 fn area(index: &Index, subject: &str) -> Result<AreaDetail, QueryError> {

@@ -65,13 +65,15 @@ pathDepth?: number, } | { "kind": "areas",
  */
 top?: number, 
 /**
- * Only areas at or under this path.
- */
-path?: string, 
-/**
  * Only areas this detector found something in.
  */
-detector?: string, } | { "kind": "area", 
+detector?: string, 
+/**
+ * Only areas at or under `path` whose findings touch lines that pass the rest of the
+ * filter (language, role, concern, symbol kind). Generated and vendored lines count
+ * only when named; `include_generated` has no effect here.
+ */
+filter: Filter, } | { "kind": "area", 
 /**
  * A file or directory path; a `path::function` subject names its file.
  */

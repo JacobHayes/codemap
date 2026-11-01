@@ -103,7 +103,8 @@ self-hosted.
   to that one cell); a path value drills there. The grid draws the 60 largest rows and 24
   largest columns and says how many it left out.
 - **Area queue.** A ranked table of area cards; the count of areas hidden by filters or below
-  the fold is always shown.
+  the fold is always shown. The header's filter chips (role, concern, language, kind) narrow it
+  like the map; an empty result offers to clear them.
 - **Source viewer.** Lines with a gutter of numbers and, where they change, role and concern;
   finding ranges are row highlights with links back to the area, and a long file pages by the
   answer's `more`. Syntax highlighting waits for the server to send token spans.

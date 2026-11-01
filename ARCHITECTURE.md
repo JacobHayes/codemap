@@ -245,14 +245,16 @@ surfaces cannot drift.
 | `Overview` | Totals and shares by role, concern and language; counts of areas by detector |
 | `Tree` | A hierarchy (path or symbol) with a size measure and a colour measure, under filters |
 | `Xtab` | Two dimensions crossed, one measure per cell, under filters |
-| `Areas` | Ranked areas, top N, under filters |
+| `Areas` | Ranked areas, top N, under a path and a detector, and under the line filters (role, concern, language): an area stays when one of its findings points at a line that passes them |
 | `Area` | One area: findings, measures, evidence, related areas |
 | `Source` | One file's lines (a page at a time) with role, concern and finding ranges; the text is read from the file and refused when it changed since indexing |
 | `Catalog` | Dimensions, measures and detectors available |
 
 - **One population.** Every query that takes filters leaves generated and vendored lines out
   unless the filter sets `includeGenerated` (`--include-generated`) or names a role, and its
-  answer says what it left out. Surfaces do not choose a population of their own.
+  answer says what it left out. Surfaces do not choose a population of their own. `Areas` is the exception: it keeps its global
+  ranks and does not hide generated or vendored lines from a line filter, since a finding there
+  is already ranked.
 - **CLI.** A verb per query (`codemap overview`, `codemap areas --top 20`, `codemap xtab --rows
   role --cols concern`), plus `index`, `serve` and `mcp`. Human text by default, the envelope
   with `--json`. Paths are relative to the root.

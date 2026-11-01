@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use duckdb::params_from_iter;
 
 use crate::config::ConfigError;
+use crate::detect::Finding;
 use crate::measure::{Filter, Term};
 use crate::store::{DATABASE_FILE, STATE_DIR, Store, StoreError};
 
@@ -72,6 +73,36 @@ pub struct SymbolRow {
     pub forwards: Option<String>,
     /// A trait, interface or abstract class.
     pub abstraction: bool,
+}
+
+/// The lines of each file that passed a filter, in order.
+pub(crate) struct Touched {
+    lines: BTreeMap<String, Vec<u32>>,
+}
+
+impl Touched {
+    /// Whether a finding points at a passing line: inside its evidence, or anywhere under its
+    /// area when it lists none.
+    pub(crate) fn touches(&self, finding: &Finding) -> bool {
+        if finding.evidence.is_empty() {
+            let area = finding.area.trim_end_matches('/');
+            if self.lines.contains_key(area) {
+                return true;
+            }
+            let prefix = format!("{area}/");
+            return self
+                .lines
+                .range(prefix.clone()..)
+                .next()
+                .is_some_and(|(path, _)| path.starts_with(&prefix));
+        }
+        finding.evidence.iter().any(|run| {
+            self.lines.get(&run.path).is_some_and(|lines| {
+                let first = lines.partition_point(|line| *line < run.start_line);
+                lines.get(first).is_some_and(|line| *line <= run.end_line)
+            })
+        })
+    }
 }
 
 /// The index under one root.
@@ -195,6 +226,23 @@ impl Index {
             Ok((key, sums))
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// The lines that pass the filter's explicit dimensions, generated and vendored included.
+    pub(crate) fn touched_by(&self, filter: &Filter) -> Result<Touched, QueryError> {
+        let (condition, bound) = filter.explicit_sql();
+        let mut statement = self.store.connection().prepare(&format!(
+            "SELECT path, line FROM line_facts WHERE {condition} ORDER BY path, line"
+        ))?;
+        let rows = statement.query_map(params_from_iter(bound.iter()), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })?;
+        let mut lines: BTreeMap<String, Vec<u32>> = BTreeMap::new();
+        for row in rows {
+            let (path, line) = row?;
+            lines.entry(path).or_default().push(line);
+        }
+        Ok(Touched { lines })
     }
 
     /// Term sums per file, for files that have lines passing the filter.

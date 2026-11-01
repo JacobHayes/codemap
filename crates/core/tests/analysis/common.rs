@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use codemap_core::{Answer, Index, Query, answer, index};
+use codemap_core::{Answer, Filter, Index, Query, answer, index};
 
 pub fn write(root: &Path, path: &str, text: &str) {
     let full = root.join(path);
@@ -69,8 +69,8 @@ pub fn areas(index: &Index) -> codemap_core::AreaList {
         index,
         &Query::Areas {
             top: None,
-            path: None,
             detector: None,
+            filter: Filter::default(),
         },
     ) {
         Answer::Areas(list) => list,

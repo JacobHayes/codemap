@@ -7,6 +7,7 @@ import { SourceView } from './components/SourceView';
 import { XtabView } from './components/XtabView';
 import { RevisionContext, useServerRevision } from './revision';
 import { useAnswer } from './useAnswer';
+import { filterOf } from './query';
 import { useUrlState } from './urlState';
 
 export function App() {
@@ -22,7 +23,11 @@ function Shell() {
   const [state, navigate] = useUrlState();
   const catalogLoad = useAnswer({ kind: 'catalog' }, 'catalog');
   const catalog = catalogLoad.state === 'ready' ? catalogLoad.answer : null;
-  const areas = useAnswer({ kind: 'areas' }, 'areas');
+  // The tab counts what the view lists before the drill path narrows it.
+  const areas = useAnswer(
+    { kind: 'areas', filter: { ...filterOf({ ...state, path: '' }), includeGenerated: false } },
+    'areas',
+  );
   const [hidden, setHidden] = useState<Hidden | null>(null);
   return (
     <div className="app">
