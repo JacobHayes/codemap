@@ -9,8 +9,9 @@
 //!   confidence of at least [`TARGET_CONFIDENCE_MIN`]. Wrappers that forward to wrappers are one
 //!   finding, the chain, listed from the outermost call inward and ending at the function that
 //!   does the work. A function that forwards to a function of its own name is left out: it
-//!   delegates to another type's method, which names cannot tell from recursion. Methods of a type that implements something are left out: the contract
-//!   demanded them.
+//!   delegates to another type's method, which names cannot tell from recursion. Methods a contract demands are left out (the extractor
+//!   gives them no forwarded callee): those of a class that implements or extends something, and
+//!   of a trait `impl` block.
 //! - **Single-implementation abstractions.** A trait, interface or abstract class that exactly
 //!   one production type implements or extends (a blanket implementation, whose implementor is a
 //!   generic parameter, counts as many). An abstraction whose name also resolves to
@@ -89,8 +90,6 @@ struct Population {
     symbols: Vec<SymbolRow>,
     by_id: BTreeMap<String, usize>,
     edges: Vec<Edge>,
-    /// Symbols that implement or extend something by name: their methods are demanded.
-    contracts: BTreeSet<String>,
 }
 
 impl Population {
@@ -101,19 +100,10 @@ impl Population {
             .enumerate()
             .map(|(at, symbol)| (symbol.id.clone(), at))
             .collect();
-        // An implementation reference that names its own symbol is an `impl Foo { }` scope.
-        let mut statement = index.store().connection().prepare(
-            "SELECT DISTINCT r.symbol FROM refs r JOIN symbols s ON s.id = r.symbol
-             WHERE r.kind = ? AND r.name <> s.name",
-        )?;
-        let contracts = statement
-            .query_map([IMPLEMENTATION], |row| row.get::<_, String>(0))?
-            .collect::<Result<_, _>>()?;
         Ok(Self {
             symbols,
             by_id,
             edges: edges(index)?,
-            contracts,
         })
     }
 
@@ -126,16 +116,10 @@ impl Population {
         is_ranked(&symbol.role) && symbol.role != Role::Test.as_str()
     }
 
-    /// Functions of production code, except the methods a contract demands.
     fn functions(&self) -> impl Iterator<Item = &SymbolRow> {
-        self.symbols.iter().filter(|symbol| {
-            symbol.kind == "function"
-                && Self::is_production(symbol)
-                && !symbol
-                    .parent
-                    .as_ref()
-                    .is_some_and(|parent| self.contracts.contains(parent))
-        })
+        self.symbols
+            .iter()
+            .filter(|symbol| symbol.kind == "function" && Self::is_production(symbol))
     }
 
     /// Each wrapper (by id) with the symbol it forwards to and how sure the link is.

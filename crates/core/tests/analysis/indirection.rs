@@ -147,6 +147,20 @@ fn wrappers_in_tests_and_methods_a_trait_demands_are_left_alone() {
 }
 
 #[test]
+fn an_inherent_method_of_a_type_that_also_implements_a_trait_is_still_a_wrapper() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    write(
+        dir.path(),
+        "src/limit.rs",
+        "use std::str::FromStr;\n\npub struct L;\n\nimpl L {\n    fn name(&self) -> &str {\n        let a = \"x\";\n        a\n    }\n    fn third(&self) {\n        let a = 1;\n        drop(a);\n    }\n    fn as_str(&self) -> &str {\n        self.name()\n    }\n    fn other(&self) {\n        self.third()\n    }\n}\n\nimpl FromStr for L {\n    type Err = ();\n    fn from_str(text: &str) -> Result<L, ()> {\n        Ok(L)\n    }\n}\n",
+    );
+    let index = indexed(dir.path());
+    // Both inherent forwarders count; the trait method is dictated by the trait.
+    assert_eq!(signal(&index, "pass_through").len(), 2);
+}
+
+#[test]
 fn a_go_function_that_only_passes_its_arguments_on_is_a_wrapper() {
     let dir = tempfile::tempdir().unwrap();
     baseline(dir.path(), 5);

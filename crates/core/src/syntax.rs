@@ -1,6 +1,6 @@
 //! The syntax extractor: one generic walk driven by a [`Language`]'s table and tags query.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
 use codemap_lang::{Concern, Kind, LANGUAGES, Language, Mark, Node, Role};
@@ -295,6 +295,8 @@ fn symbols_and_refs(
     let mut definitions: BTreeMap<DefinitionKey, (SymbolKind, String, Node, bool)> =
         BTreeMap::new();
     let mut refs = Vec::new();
+    // What implements or extends something by name: the range and the name.
+    let mut implementations = Vec::new();
     while let Some(found) = matches.next() {
         let mut name = None;
         let mut tag = None;
@@ -319,6 +321,9 @@ fn symbols_and_refs(
             continue;
         };
         if let Some(kind) = tag.strip_prefix("reference.") {
+            if kind == "implementation" {
+                implementations.push(((node.start_byte(), node.end_byte()), name.to_owned()));
+            }
             refs.push((
                 name.to_owned(),
                 kind.to_owned(),
@@ -331,12 +336,25 @@ fn symbols_and_refs(
                 .or_insert((kind, name.to_owned(), node, extension));
         }
     }
+    // A reference that names the definition of its own range (`impl Foo { }` for `Foo`) is a
+    // scope, not a contract.
+    let contracts: BTreeSet<(usize, usize)> = implementations
+        .into_iter()
+        .filter(|(range, name)| {
+            ![true, false].into_iter().any(|extension| {
+                definitions
+                    .get(&(range.0, range.1, extension))
+                    .is_some_and(|(_, defined, ..)| defined == name)
+            })
+        })
+        .map(|(range, _)| range)
+        .collect();
     let mut ordered: Vec<_> = definitions.into_iter().collect();
     // An extension that is also a definition (a Go method) comes first, so the definition nests
     // in it.
     ordered
         .sort_by_key(|((start, end, extension), _)| (*start, std::cmp::Reverse(*end), !*extension));
-    let (symbols, line_symbols) = nest(language, kinds, source, &ordered, line_count);
+    let (symbols, line_symbols) = nest(language, kinds, source, &ordered, &contracts, line_count);
     (symbols, refs, line_symbols)
 }
 
@@ -392,6 +410,7 @@ fn nest(
     kinds: &[Option<Kind>],
     source: &[u8],
     ordered: &[Definition],
+    contracts: &BTreeSet<(usize, usize)>,
     line_count: usize,
 ) -> (Vec<SymbolFact>, Vec<Option<u32>>) {
     let targets = merge_targets(ordered);
@@ -402,25 +421,32 @@ fn nest(
         count += u32::from(target.is_none());
     }
     let mut symbols: Vec<SymbolFact> = Vec::new();
-    // The symbol that owns what is declared inside each open range.
-    let mut open: Vec<(u32, usize, usize)> = Vec::new();
+    // The symbol that owns what is declared inside each open range, and whether a contract
+    // demands the functions declared directly in it: the range implements something by name
+    // (a trait `impl` block, a class with a base), or is the type that does.
+    let mut open: Vec<(u32, usize, usize, bool)> = Vec::new();
     let mut line_symbols = vec![None; line_count];
     for (at, &((start, end, _), (kind, ref name, node, _))) in ordered.iter().enumerate() {
         while open
             .last()
-            .is_some_and(|&(_, top_start, top_end)| !(top_start <= start && end <= top_end))
+            .is_some_and(|&(_, top_start, top_end, _)| !(top_start <= start && end <= top_end))
         {
             open.pop();
         }
         let (first, last) = rows(&node);
         if let Some(target) = targets[at] {
             line_symbols[first..=last].fill(Some(symbol_of[target]));
-            open.push((symbol_of[target], start, end));
+            let (type_start, type_end, _) = ordered[target].0;
+            let demanded =
+                contracts.contains(&(start, end)) || contracts.contains(&(type_start, type_end));
+            open.push((symbol_of[target], start, end, demanded));
             continue;
         }
         let index = symbol_of[at];
         line_symbols[first..=last].fill(Some(index));
         let (forwards, abstraction) = shape_of(kind, language, kinds, &node, source);
+        // The contract dictates the signature of what it demands, so that is not a wrapper.
+        let forwards = forwards.filter(|_| !open.last().is_some_and(|&(.., demanded)| demanded));
         symbols.push(SymbolFact {
             kind,
             name: name.clone(),
@@ -432,7 +458,7 @@ fn nest(
             forwards,
             abstraction,
         });
-        open.push((index, start, end));
+        open.push((index, start, end, contracts.contains(&(start, end))));
     }
     (symbols, line_symbols)
 }
