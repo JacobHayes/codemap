@@ -120,6 +120,12 @@ fn dispatch(command: Command) -> Result<(), Failure> {
                 report.extracted_count,
                 started.elapsed().as_secs_f64()
             );
+            if report.comparisons_skipped > 0 {
+                println!(
+                    "{} near-duplicate comparisons skipped in oversized buckets of look-alikes",
+                    report.comparisons_skipped
+                );
+            }
             println!("{}", semantic.summary());
             Ok(())
         }

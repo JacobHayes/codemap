@@ -48,6 +48,8 @@ pub struct IndexReport {
     pub line_count: u64,
     /// Files extracted this run: changed, new, or all of them after a build change.
     pub extracted_count: u64,
+    /// Near-duplicate comparisons left out because a bucket of look-alikes exceeded its budget.
+    pub comparisons_skipped: u64,
 }
 
 /// A file read this run: unchanged files carry no facts.
@@ -141,6 +143,10 @@ impl Index {
         Ok(IndexReport {
             file_count,
             line_count,
+            comparisons_skipped: store
+                .meta(similarity::SKIPPED_META)?
+                .and_then(|count| count.parse().ok())
+                .unwrap_or(0),
             extracted_count: scanned.iter().filter(|file| file.facts.is_some()).count() as u64,
         })
     }

@@ -8,7 +8,8 @@
 //! [`NEAR_JACCARD_MIN`] and its identifiers as written overlap by at least [`IDENT_JACCARD_MIN`].
 //! A pair whose functions are already connected is skipped, so `similar`
 //! holds enough pairs to connect every cluster rather than every pair inside it, and a bucket of
-//! thousands of look-alikes costs a pass, not a square.
+//! thousands of look-alikes costs a pass, not a square. A bucket still has a comparison budget
+//! ([`BUCKET_COMPARISONS_MAX`]), because rejected candidates stay in it as anchors.
 //!
 //! The semantic analysis ([`crate::semantic`]) later adds pairs of kind `semantic` for functions
 //! that do the same thing in different words.
@@ -40,6 +41,16 @@ pub(crate) const IDENT_JACCARD_MIN: f64 = 0.25;
 
 /// Hashes per band. With [`MINHASH_LEN`] hashes this makes 16 bands (see `MINHASH_LEN`).
 const BAND_ROWS: usize = 4;
+
+/// Comparisons one bucket may spend. A rejected candidate stays in its bucket as an anchor, so a
+/// bucket of many functions that share a band but not a shape would otherwise cost a square. The
+/// bucket is read in a fixed order, so the same comparisons are made on every run; those past
+/// the budget are skipped and counted in the index summary. Far above what buckets of true
+/// copies need (one comparison per cluster seen), so only degenerate buckets reach it.
+const BUCKET_COMPARISONS_MAX: usize = 10_000;
+
+/// Meta key holding the comparisons the last run skipped, for the index summary.
+pub(crate) const SKIPPED_META: &str = "near_comparisons_skipped";
 
 pub(crate) const EXACT: &str = "exact";
 pub(crate) const NEAR: &str = "near";
@@ -169,21 +180,34 @@ fn exact_pairs(entries: &[Entry], components: &mut Components) -> (Vec<Pair>, Ve
 
 /// Confirms the candidates of one bucket. Each function is scored against one anchor per cluster
 /// already seen in the bucket, not against every earlier function, so a bucket of look-alikes
-/// costs a pass.
+/// costs a pass. Returns the comparisons skipped for want of budget: an estimate, the anchors
+/// at the point the budget ran out times the functions left.
 fn join_bucket(
     entries: &[Entry],
     bucket: &[(&[u32], usize)],
     components: &mut Components,
     pairs: &mut Vec<Pair>,
-) {
+    mut budget: usize,
+) -> usize {
     let mut anchors: Vec<usize> = Vec::new();
-    for &(_, later) in bucket {
-        for &anchor in &anchors {
+    let mut skipped = 0;
+    for (at, &(_, later)) in bucket.iter().enumerate() {
+        if budget == 0 {
+            // Stop here: counting each remaining pair would itself be the square.
+            skipped += anchors.len() * (bucket.len() - at);
+            break;
+        }
+        for (position, &anchor) in anchors.iter().enumerate() {
             if components.find(anchor) == components.find(later)
                 || entries[anchor].overlaps(&entries[later])
             {
                 continue;
             }
+            if budget == 0 {
+                skipped += anchors.len() - position;
+                break;
+            }
+            budget -= 1;
             let score = jaccard(&entries[anchor].minhash, &entries[later].minhash);
             if score >= NEAR_JACCARD_MIN
                 && jaccard(&entries[anchor].idents, &entries[later].idents) >= IDENT_JACCARD_MIN
@@ -196,11 +220,17 @@ fn join_bucket(
         let mut seen = BTreeSet::new();
         anchors.retain(|&anchor| seen.insert(components.find(anchor)));
     }
+    skipped
 }
 
-/// Near pairs among the group representatives, found band by band.
-fn near_pairs(entries: &[Entry], firsts: &[usize], components: &mut Components) -> Vec<Pair> {
+/// Near pairs among the group representatives, found band by band, and the comparisons skipped.
+fn near_pairs(
+    entries: &[Entry],
+    firsts: &[usize],
+    components: &mut Components,
+) -> (Vec<Pair>, usize) {
     let mut pairs = Vec::new();
+    let mut skipped = 0;
     for band in 0..MINHASH_LEN / BAND_ROWS {
         let rows = band * BAND_ROWS..(band + 1) * BAND_ROWS;
         let mut keyed: Vec<(&[u32], usize)> = firsts
@@ -209,10 +239,16 @@ fn near_pairs(entries: &[Entry], firsts: &[usize], components: &mut Components) 
             .collect();
         keyed.sort_unstable();
         for bucket in keyed.chunk_by(|a, b| a.0 == b.0) {
-            join_bucket(entries, bucket, components, &mut pairs);
+            skipped += join_bucket(
+                entries,
+                bucket,
+                components,
+                &mut pairs,
+                BUCKET_COMPARISONS_MAX,
+            );
         }
     }
-    pairs
+    (pairs, skipped)
 }
 
 /// Rewrites `similar` from the fingerprints in `symbols`.
@@ -220,7 +256,9 @@ pub(crate) fn run(index: &Index) -> Result<(), QueryError> {
     let entries = load(index)?;
     let mut components = Components::new(entries.len());
     let (mut pairs, firsts) = exact_pairs(&entries, &mut components);
-    pairs.extend(near_pairs(&entries, &firsts, &mut components));
+    let (near, skipped) = near_pairs(&entries, &firsts, &mut components);
+    pairs.extend(near);
+    index.store().set_meta(SKIPPED_META, &skipped.to_string())?;
     let connection = index.store().connection();
     connection.execute_batch("DELETE FROM \"similar\"")?;
     let mut rows = connection.appender("similar")?;
@@ -392,4 +430,63 @@ pub(crate) fn groups(index: &Index) -> Result<Vec<Group>, QueryError> {
             .cmp(&(&b.members[0].path, b.members[0].start_line))
     });
     Ok(groups)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Functions that share a band and nothing else: every one is rejected and stays an anchor.
+    fn look_alikes(count: usize) -> Vec<Entry> {
+        (0..count)
+            .map(|at| {
+                let mut minhash = [0_u32; MINHASH_LEN];
+                minhash[BAND_ROWS..].fill(u32::try_from(at + 1).unwrap());
+                let tag = u32::try_from(at).unwrap();
+                Entry {
+                    id: at.to_string(),
+                    path: format!("{at}.rs"),
+                    start_line: 1,
+                    end_line: 9,
+                    exact: u64::from(tag),
+                    minhash,
+                    idents: [tag; IDENT_LEN],
+                }
+            })
+            .collect()
+    }
+
+    fn run_bucket(entries: &[Entry], budget: usize) -> (usize, usize) {
+        let bucket: Vec<(&[u32], usize)> = (0..entries.len())
+            .map(|at| (&entries[at].minhash[..BAND_ROWS], at))
+            .collect();
+        let mut pairs = Vec::new();
+        let skipped = join_bucket(
+            entries,
+            &bucket,
+            &mut Components::new(entries.len()),
+            &mut pairs,
+            budget,
+        );
+        (pairs.len(), skipped)
+    }
+
+    #[test]
+    fn a_bucket_of_look_alikes_stops_at_its_budget_and_counts_what_it_skipped() {
+        let entries = look_alikes(10);
+        // Every function meets every earlier one: 45 comparisons.
+        assert_eq!(run_bucket(&entries, usize::MAX), (0, 0));
+        assert_eq!(run_bucket(&entries, 45), (0, 0));
+        // Out of budget during the seventh function, which has six anchors and made five
+        // comparisons; the last three functions would each have met seven anchors.
+        assert_eq!(run_bucket(&entries, 20), (0, 1 + 3 * 7));
+    }
+
+    #[test]
+    fn copies_are_still_found_within_the_budget() {
+        let mut entries = look_alikes(4);
+        entries[3].minhash = entries[0].minhash;
+        entries[3].idents = entries[0].idents;
+        assert_eq!(run_bucket(&entries, 10).0, 1);
+    }
 }
