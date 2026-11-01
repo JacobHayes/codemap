@@ -192,9 +192,18 @@ impl Reader<'_> {
             // A case with no label is `default`.
             let catch_all = !guarded
                 && (labels.is_empty()
-                    || names
-                        .iter()
-                        .any(|name| matches_anything(name, self.language.case_names_bind)));
+                    || match labels.first().and_then(tuple_elements) {
+                        // A tuple catches everything when every position does.
+                        Some(elements) => elements.iter().all(|element| {
+                            matches_anything(
+                                text(element, self.source),
+                                self.language.case_names_bind,
+                            )
+                        }),
+                        None => names
+                            .iter()
+                            .any(|name| matches_anything(name, self.language.case_names_bind)),
+                    });
             pending_cases += labels
                 .iter()
                 .map(|label| case_count(label, self.source))
@@ -417,6 +426,27 @@ impl Reader<'_> {
         call.named_children(&mut cursor)
             .all(|child| self.trivial(&child, bound))
     }
+}
+
+/// The positions of a tuple pattern, when the label is one.
+pub(crate) fn tuple_elements<'t>(label: &Node<'t>) -> Option<Vec<Node<'t>>> {
+    let mut node = *label;
+    // A match pattern wraps the tuple, with a guard beside it.
+    for _ in 0..3 {
+        if matches!(node.kind(), "tuple_pattern" | "tuple") {
+            let mut cursor = node.walk();
+            return Some(
+                node.named_children(&mut cursor)
+                    .filter(|child| !child.kind().contains("comment"))
+                    .collect(),
+            );
+        }
+        if !matches!(node.kind(), "match_pattern" | "case_pattern") {
+            return None;
+        }
+        node = node.named_child(0)?;
+    }
+    None
 }
 
 /// The cases one label names: the parts of a list, or the alternatives of an or-pattern that

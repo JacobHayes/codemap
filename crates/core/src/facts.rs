@@ -89,6 +89,9 @@ pub struct SwitchFact {
     pub degenerate: bool,
     /// Two arms for different cases have the same body, with logic of its own.
     pub duplicated: bool,
+    /// One position of a tuple match, which may tell fewer cases apart than a set needs and
+    /// still be a site of one.
+    pub partial: bool,
 }
 
 /// Everything extracted from one file.

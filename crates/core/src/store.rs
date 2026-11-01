@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS refs (
     path VARCHAR, line UINTEGER, name VARCHAR, kind VARCHAR, symbol VARCHAR);
 CREATE TABLE IF NOT EXISTS switches (
     path VARCHAR, symbol VARCHAR, start_line UINTEGER, end_line UINTEGER, labels VARCHAR,
-    wildcard BOOLEAN, table_like BOOLEAN, degenerate BOOLEAN, duplicated BOOLEAN);
+    wildcard BOOLEAN, table_like BOOLEAN, degenerate BOOLEAN, duplicated BOOLEAN, partial BOOLEAN);
 CREATE TABLE IF NOT EXISTS edges (
     from_symbol VARCHAR, to_symbol VARCHAR, kind VARCHAR, confidence DOUBLE);
 CREATE TABLE IF NOT EXISTS measures (subject VARCHAR, key VARCHAR, value DOUBLE);
@@ -111,7 +111,8 @@ fn append_switches(
             switch.wildcard,
             switch.table,
             switch.degenerate,
-            switch.duplicated
+            switch.duplicated,
+            switch.partial
         ])?;
     }
     Ok(())

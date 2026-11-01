@@ -29,7 +29,8 @@
 //! that look like something else: a catch-all arm (a new case is silently missed), one or two
 //! real arms among identical trivial ones (a missing accessor), arms that only map cases to
 //! constants (a missing table), and arms for different cases with the same body (the logic
-//! written once per variant). Sites whose arms are distinct behaviour do not count, and a set
+//! written once per variant). A match over a tuple is a site of each enum in a position that
+//! varies, and a position with fewer cases than a set needs may join one by name. Sites whose arms are distinct behaviour do not count, and a set
 //! needs [`FLAGGED_SITES_MIN`] flagged sites: one on its own is a linter's finding. Sets of
 //! string or number literals are untyped tags and count every site.
 //!
@@ -58,6 +59,8 @@ const STEM_LEN_MIN: usize = 3;
 /// More definitions of one name than this make it a convention.
 const NAME_REPEAT_MAX: usize = 3;
 const CASES_MIN: usize = 3;
+/// A site of fewer cases (one position of a tuple match) may join a set but never starts one.
+const PARTIAL_CASES_MIN: usize = 2;
 const SITES_MIN: usize = 3;
 
 pub struct Parallel;
@@ -334,6 +337,8 @@ struct Site {
     table: bool,
     degenerate: bool,
     duplicated: bool,
+    /// One position of a tuple match.
+    partial: bool,
 }
 
 impl Site {
@@ -371,7 +376,7 @@ fn is_literal(label: &str) -> bool {
 fn discriminators(index: &Index) -> Result<Vec<CaseSet>, QueryError> {
     let mut statement = index.store().connection().prepare(
         "SELECT w.path, w.start_line, w.end_line, w.labels, l.role,
-                w.wildcard, w.table_like, w.degenerate, w.symbol, w.duplicated
+                w.wildcard, w.table_like, w.degenerate, w.symbol, w.duplicated, w.partial
          FROM switches w JOIN lines l ON l.path = w.path AND l.line = w.start_line
          ORDER BY w.labels, w.path, w.start_line",
     )?;
@@ -391,6 +396,7 @@ fn discriminators(index: &Index) -> Result<Vec<CaseSet>, QueryError> {
                 table: row.get(6)?,
                 degenerate: row.get(7)?,
                 duplicated: row.get(9)?,
+                partial: row.get(10)?,
             },
             row.get::<_, String>(3)?,
             row.get::<_, String>(4)?,
@@ -400,16 +406,20 @@ fn discriminators(index: &Index) -> Result<Vec<CaseSet>, QueryError> {
     for row in rows {
         let (site, labels, role) = row?;
         if is_ranked(&role) && role != Role::Test.as_str() {
-            let labels = labels.split(LABEL_SEPARATOR).map(str::to_owned).collect();
-            sets.entry(labels).or_default().push(site);
+            let labels: Vec<String> = labels.split(LABEL_SEPARATOR).map(str::to_owned).collect();
+            // Only a tuple position may be a site of fewer cases than a set needs.
+            if labels.len() >= CASES_MIN || site.partial {
+                sets.entry(labels).or_default().push(site);
+            }
         }
     }
     let (literal, named): (Vec<_>, Vec<_>) = sets
         .into_iter()
-        .filter(|(labels, _)| labels.len() >= CASES_MIN)
+        .filter(|(labels, _)| labels.len() >= PARTIAL_CASES_MIN)
         .partition(|(labels, _)| labels.iter().all(|label| is_literal(label)));
     let mut found: Vec<CaseSet> = literal
         .into_iter()
+        .filter(|(labels, _)| labels.len() >= CASES_MIN)
         .map(|(labels, sites)| CaseSet {
             labels,
             sites,
@@ -435,9 +445,17 @@ fn cluster(mut sets: Vec<(Vec<String>, Vec<Site>)>) -> Vec<CaseSet> {
                 *shared.entry(at).or_default() += 1;
             }
         }
+        // Fewer cases than a set needs may only join one, and only by name (`Kind::A`).
+        let partial = labels.len() < CASES_MIN;
+        let qualified = labels.iter().all(|label| label.contains(['.', ':']));
         let home = shared.into_iter().find(|&(_, shared)| {
-            shared >= CASES_MIN && number(shared) >= SUBSET_SHARE * number(labels.len())
+            shared >= CASES_MIN.min(labels.len())
+                && number(shared) >= SUBSET_SHARE * number(labels.len())
+                && (!partial || qualified)
         });
+        if home.is_none() && partial {
+            continue;
+        }
         if let Some((at, _)) = home {
             clusters[at].1.extend(sites);
         } else {
@@ -452,6 +470,12 @@ fn cluster(mut sets: Vec<(Vec<String>, Vec<Site>)>) -> Vec<CaseSet> {
     }
     clusters
         .into_iter()
+        .map(|(universe, mut sites)| {
+            // Two positions of one tuple match are one place.
+            let mut seen = BTreeSet::new();
+            sites.retain(|site| seen.insert((site.path.clone(), site.start_line, site.end_line)));
+            (universe, sites)
+        })
         .map(|(universe, sites)| CaseSet {
             labels: universe.into_iter().collect(),
             sites,

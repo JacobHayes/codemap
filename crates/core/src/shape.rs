@@ -26,6 +26,8 @@ const COMPUTING: &[&str] = &[
 ];
 /// Comparisons against the same expression that make an `if` chain a switch in disguise.
 const CHAIN_COMPARISONS_MIN: usize = 3;
+/// A tuple position is a site of a case set when its arms tell this many cases apart.
+const TUPLE_CASES_MIN: usize = 2;
 /// How deep below an `if` condition a comparison is looked for (parentheses, `not`, `and`).
 const COMPARISON_DEPTH_MAX: usize = 4;
 
@@ -267,20 +269,28 @@ pub(crate) fn switches(
     while let Some(node) = stack.pop() {
         let facts = match kind_of(kinds, &node) {
             Some(Kind::Switch) => {
-                let (labels, last) = switch_labels(language, kinds, &node, source);
-                Some((labels, last, arms::classify(language, kinds, &node, source)))
+                let (sets, last, tuple) = switch_label_sets(language, kinds, &node, source);
+                Some((
+                    sets,
+                    last,
+                    arms::classify(language, kinds, &node, source),
+                    tuple,
+                ))
             }
             Some(Kind::Conditional) if !in_chain.contains(&node.id()) => {
                 chain_labels(kinds, &node, source, &mut in_chain).map(|chain| {
                     let shape =
                         arms::classify_chain(language, kinds, &chain.links, chain.closing, source);
-                    (chain.labels, chain.last, shape)
+                    (vec![chain.labels], chain.last, shape, false)
                 })
             }
             _ => None,
         };
-        if let Some((labels, last, shape)) = facts {
-            let labels = normalise(&labels, language.case_names_bind);
+        for (labels, last, shape, partial) in facts.iter().flat_map(|(sets, last, shape, tuple)| {
+            sets.iter()
+                .map(move |labels| (labels, *last, *shape, *tuple))
+        }) {
+            let labels = normalise(labels, language.case_names_bind);
             if !labels.is_empty() {
                 found.push(SwitchFact {
                     symbol: None,
@@ -291,6 +301,7 @@ pub(crate) fn switches(
                     table: shape.table,
                     degenerate: shape.degenerate,
                     duplicated: shape.duplicated,
+                    partial,
                 });
             }
         }
@@ -315,17 +326,51 @@ pub(crate) fn case_nodes<'t>(kinds: &[Option<Kind>], switch: &Node<'t>) -> Vec<N
         .collect()
 }
 
-fn switch_labels<'t>(
+/// The case texts of a switch to turn into labels. A switch over a tuple has one set per
+/// position that tells at least [`TUPLE_CASES_MIN`] cases apart, so the site is a site of the
+/// enum in each position that varies; the others are constants and say nothing.
+fn switch_label_sets<'t>(
     language: &Language,
     kinds: &[Option<Kind>],
     switch: &Node<'t>,
     source: &[u8],
-) -> (Vec<String>, Node<'t>) {
-    let labels = case_nodes(kinds, switch)
+) -> (Vec<Vec<String>>, Node<'t>, bool) {
+    let cases = case_nodes(kinds, switch);
+    let mut positions: Vec<Vec<String>> = Vec::new();
+    let mut tuples = false;
+    let mut scalar = Vec::new();
+    for case in &cases {
+        let Some(elements) = label_nodes(language, case)
+            .first()
+            .and_then(arms::tuple_elements)
+        else {
+            scalar.extend(case_labels(language, case, source));
+            continue;
+        };
+        tuples = true;
+        if positions.len() < elements.len() {
+            positions.resize(elements.len(), Vec::new());
+        }
+        for (position, element) in elements.iter().enumerate() {
+            positions[position].push(text(element, source).to_owned());
+        }
+    }
+    if tuples {
+        let mut varying: Vec<Vec<String>> = positions
+            .into_iter()
+            .filter(|texts| normalise(texts, language.case_names_bind).len() >= TUPLE_CASES_MIN)
+            .collect();
+        // Arms that are not tuples are cases of their own.
+        if !scalar.is_empty() {
+            varying.push(scalar);
+        }
+        return (varying, *switch, true);
+    }
+    let labels = cases
         .iter()
         .flat_map(|case| case_labels(language, case, source))
         .collect();
-    (labels, *switch)
+    (vec![labels], *switch, false)
 }
 
 /// The nodes a case matches: the first of the language's label fields that exists.

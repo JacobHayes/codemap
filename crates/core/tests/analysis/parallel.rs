@@ -683,3 +683,37 @@ fn guards_conditional_values_and_distinct_strings_are_not_constant_tables() {
     }
     assert!(sites(&indexed(dir.path())).is_empty());
 }
+
+#[test]
+fn tuple_matches_are_sites_of_the_enum_in_each_position_that_varies() {
+    // `(field, payload)`: the field position tells four cases apart, the payload two. Arms for
+    // the two payloads repeat each other's bodies.
+    let tuple = |name: &str| {
+        format!(
+            "pub fn {name}(f: Field, p: Payload) -> Option<u32> {{\n    match (f, p) {{\n        (Field::A, Payload::X(w)) => Some(w.a),\n        (Field::A, Payload::Y(w)) => Some(w.a),\n        (Field::B, Payload::X(w)) => Some(w.b),\n        (Field::B, Payload::Y(w)) => Some(w.b),\n        (Field::C, Payload::X(w)) => Some(w.c),\n        (Field::C, Payload::Y(w)) => Some(w.c),\n        _ => None,\n    }}\n}}\n"
+        )
+    };
+    let payload = |name: &str| {
+        format!(
+            "pub fn {name}(p: Payload) -> u32 {{\n    match p {{\n        Payload::X(w) => step_a(w, 1),\n        Payload::Y(w) => step_b(w, 2),\n        Payload::Z => step_c(3),\n    }}\n}}\n"
+        )
+    };
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    write(dir.path(), "src/a.rs", &tuple("a"));
+    write(dir.path(), "src/b.rs", &tuple("b"));
+    write(dir.path(), "src/d.rs", &tuple("d"));
+    write(dir.path(), "src/c.rs", &payload("c"));
+    let found = sites(&indexed(dir.path()));
+    // Field: the three tuple sites. Payload: those three, which join by their two payloads,
+    // and the plain match.
+    let sizes: Vec<_> = found
+        .iter()
+        .map(|f| (f.measures["cases"], f.measures["sites"]))
+        .collect();
+    assert_eq!(found.len(), 2, "{sizes:?}");
+    for finding in &found {
+        assert_eq!(finding.measures["duplicatedSites"], 3.0);
+        assert_eq!(finding.measures["wildcardSites"], 3.0);
+    }
+}
