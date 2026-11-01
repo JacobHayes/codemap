@@ -31,9 +31,14 @@ use crate::similarity::{Components, eligible_filter};
 pub(crate) const SEMANTIC: &str = "semantic";
 
 /// Cosine similarity at which a pair is worth asking a model about. Code in one codebase shares
-/// vocabulary, so the vectors are crowded: in a 466-function repository every pair the model
-/// confirmed scored above 0.7, and the 719 it was asked about below that were all rejected.
-pub(crate) const SIMILARITY_MIN: f32 = 0.7;
+/// vocabulary, so the vectors are crowded, and floors do not transfer between embedding models;
+/// this one was measured on two repositories (6,500 and 8,400 functions) with voyage-code-4 and
+/// with qwen3-embedding-8b, sampling pairs across similarity bands. With both, almost nothing
+/// above the decision model's bar is found below 0.75. With voyage, from 0.7 to 0.8 a fifth of
+/// the confirmed pairs read by hand were copies (the rest a function beside its test, or a thin
+/// wrapper), from 0.8 to 0.9 half, above 0.9 three in four; qwen's similarities run higher and
+/// its confirmed pairs cluster above 0.85. 0.8 halves the questions for either.
+pub(crate) const SIMILARITY_MIN: f32 = 0.8;
 
 /// Candidates kept per function. A function has a handful of real counterparts at most, and the
 /// strongest come first; more only spends calls on look-alikes.
@@ -48,10 +53,6 @@ pub(crate) const PROBABILITY_MIN: f64 = 0.8;
 /// repositories the unbounded groups were dozens of look-alike probes and wrappers, not copies of
 /// one idea. Past this size the group is already a family to look at as a whole.
 pub(crate) const GROUP_SIZE_MAX: usize = 12;
-
-/// Model calls per run. A first run on a large codebase is bounded in cost and time; the rest are
-/// asked on later runs, strongest candidates first, because answers are cached.
-pub(crate) const CALLS_MAX: usize = 2000;
 
 /// Characters of a function's normalized source that are embedded. Embedding models take far
 /// more, but the opening of a function says what it does and a long tail only dilutes it.
@@ -91,8 +92,6 @@ pub struct SemanticRun {
     pub candidate_count: u64,
     /// Candidates a model was asked about this run; the rest were answered from the cache.
     pub asked_count: u64,
-    /// Candidates left for a later run because the call budget was spent.
-    pub skipped_count: u64,
     /// Functions and candidates left for a later run: no usable answer, or source that changed
     /// since it was indexed.
     pub failed_count: u64,
@@ -145,12 +144,6 @@ impl SemanticStatus {
                     run.asked_count,
                     run.confirmed_count,
                 )];
-                if run.skipped_count > 0 {
-                    parts.push(format!(
-                        "{} candidates left for the next run (call budget spent)",
-                        run.skipped_count
-                    ));
-                }
                 if run.failed_count > 0 {
                     parts.push(format!("{} could not be processed", run.failed_count));
                 }
@@ -253,7 +246,7 @@ pub(crate) fn run(
     report.cost_micro_usd = client.cost_micro_usd();
     match result {
         Ok(pairs) => Ok(Outcome {
-            complete: report.skipped_count == 0 && report.failed_count == 0,
+            complete: report.failed_count == 0,
             status: SemanticStatus::Ran(report),
             pairs,
         }),
@@ -726,14 +719,7 @@ fn answer_key(a: &str, b: &str) -> (String, String) {
     }
 }
 
-/// The first `calls_max` of `pending`, and how many were left out.
-pub(crate) fn within_budget<T>(mut pending: Vec<T>, calls_max: usize) -> (Vec<T>, usize) {
-    let skipped = pending.len().saturating_sub(calls_max);
-    pending.truncate(calls_max);
-    (pending, skipped)
-}
-
-/// Probability for every candidate that has an answer: cached, or asked now within the budget.
+/// Probability for every candidate that has an answer: cached, or asked now.
 fn confirm(
     index: &Index,
     decider: &dyn DecisionModel,
@@ -762,8 +748,6 @@ fn confirm(
             !answers.contains_key(&answer_key(&functions[a].hash, &functions[b].hash))
         })
         .collect();
-    let (pending, skipped) = within_budget(pending, CALLS_MAX);
-    report.skipped_count = skipped as u64;
     let mut questions: Vec<(String, String, String, String)> = Vec::new();
     for &(a, b) in &pending {
         let key = answer_key(&functions[a].hash, &functions[b].hash);
@@ -944,14 +928,6 @@ mod tests {
             neighbours(&held(&vectors), 5, 0.5, |_, _| true, |place| place).len(),
             0
         );
-    }
-
-    #[test]
-    fn budget_keeps_the_strongest_and_counts_the_rest() {
-        let (kept, skipped) = within_budget(vec![1, 2, 3, 4, 5], 3);
-        assert_eq!((kept, skipped), (vec![1, 2, 3], 2));
-        let (kept, skipped) = within_budget(vec![1, 2], 3);
-        assert_eq!((kept, skipped), (vec![1, 2], 0));
     }
 
     #[test]

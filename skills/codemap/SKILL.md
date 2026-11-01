@@ -69,7 +69,12 @@ your session.
    kind, path) with a measure per cell, to see composition at a glance. `tree` and `xtab`
    leave generated and vendored lines out and say how many; `--include-generated` counts them.
 3. Read the evidence with your own tools; a duplication finding lists every copy, so open each
-   and compare. Ask: is this mass needed? Is the same idea built
+   and compare. A finding that says the group was found by meaning comes from a model: the
+   copies share intent in different words, so read them for that, and expect some to be a
+   function beside its test or a wrapper over its callee. That analysis is off unless
+   `.codemap/config.toml` has an `[inference]` table and the key is in the environment;
+   `codemap index` says in one line whether it ran. Its first run asks about every candidate
+   and costs money (the index line prints the spend); later runs reuse the cached answers. Ask: is this mass needed? Is the same idea built
    twice? Are there wrappers or chains that only pass through? Is the handling or testing out of
    proportion to what it protects?
 4. Decide. Either propose a concrete simplification, or, if the complexity is essential, tell

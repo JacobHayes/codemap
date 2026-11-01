@@ -228,8 +228,10 @@ OpenAI-compatible client, which most embedding providers speak. Tests seed the `
 Semantic duplication runs after the deterministic analyses have committed, outside their
 transaction, and only when `[inference]` names both models and the environment holds the key;
 otherwise `codemap index` says in one line that it is off and why. Candidates are the nearest
-neighbours of each function above a similarity floor, minus pairs already connected, strongest
-first and within a per-run call budget; what the budget leaves is asked on later runs. A
+neighbours of each function above a similarity floor (measured, a named constant), minus pairs already connected, strongest first. A run asks about every
+candidate that has no cached answer, so the first run on a codebase costs the most and later
+runs ask only about what changed; a model API that keeps failing ends the run after bounded
+retries, and the unanswered candidates are asked on the next. A
 confirmed pair joins the clusters of exact and near copies, and the findings say the group was
 found by meaning. A model API that fails leaves the deterministic results standing.
 
