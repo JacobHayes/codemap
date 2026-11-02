@@ -204,9 +204,11 @@ touches.
 
 An **area** is a subject with one or more findings, and its subject is either:
 
-- **a location**, a file or directory. Detectors that agree on it combine into one area: its
-  **opportunity** grows with the number of distinct detectors that agree and with the mass
-  involved; confidence only breaks ties.
+- **a location**, a file or directory. Its findings combine into one area: its **opportunity**
+  grows with the number of distinct detectors that agree and with the mass involved; confidence
+  only breaks ties. A detector agrees within the area when its finding covers the lines of the
+  largest, by the same test as areas agreeing (below), so a three-line wrapper in a large file
+  is listed but does not double the file's mass.
 - **a group**, which is its own area whatever the number of files it spans. Its evidence lists
   every member's file and line ranges, its mass is the group's lines (duplicated lines for
   copies, the members' distinct lines otherwise), and its title says what the pattern is and

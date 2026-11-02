@@ -38,7 +38,8 @@ title: string, subjectKind: SubjectKind,
  */
 rank: number, opportunity: number, massLines: number, confidence: number, 
 /**
- * The distinct detectors that agree, by name.
+ * The distinct detectors that flagged it, by name; only those that agree count toward
+ * `opportunity`.
  */
 detectors: Array<string>, findingCount: number, 
 /**
