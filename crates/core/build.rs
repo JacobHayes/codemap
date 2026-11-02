@@ -48,15 +48,11 @@ fn main() {
         "DuckDB's static libraries are missing from {lib_dir}: run scripts/duckdb"
     );
 
-    println!("cargo:rustc-link-search=native={lib_dir}");
-    println!("cargo:rustc-link-lib=static=core_functions_extension");
-    let runtime = match env::var("CARGO_CFG_TARGET_OS").as_deref() {
-        Ok("macos") => "c++",
-        _ => "stdc++",
-    };
-    println!("cargo:rustc-link-lib={runtime}");
-
-    // Whole-archive keeps the constructor, which nothing references.
+    // GNU ld reads an archive once, so each library must follow what needs it: the registration,
+    // then the extension it calls, then the C++ runtime. Whole-archive keeps the registration's
+    // constructor, which nothing references, and is passed to the final link on its own, after
+    // every rlib; the extension is not bundled into this crate's rlib, so it follows it there
+    // instead of sitting earlier inside the rlib.
     let out_dir = env::var("OUT_DIR").expect("cargo sets OUT_DIR");
     cc::Build::new()
         .file("register_extensions.c")
@@ -64,4 +60,12 @@ fn main() {
         .compile("register_extensions");
     println!("cargo:rustc-link-search=native={out_dir}");
     println!("cargo:rustc-link-lib=static:+whole-archive=register_extensions");
+
+    println!("cargo:rustc-link-search=native={lib_dir}");
+    println!("cargo:rustc-link-lib=static:-bundle=core_functions_extension");
+    let runtime = match env::var("CARGO_CFG_TARGET_OS").as_deref() {
+        Ok("macos") => "c++",
+        _ => "stdc++",
+    };
+    println!("cargo:rustc-link-lib={runtime}");
 }
