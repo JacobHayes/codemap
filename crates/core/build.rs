@@ -45,7 +45,7 @@ fn main() {
     let lib_dir = env::var("DUCKDB_LIB_DIR").expect("DUCKDB_LIB_DIR comes from .cargo/config.toml");
     assert!(
         Path::new(&lib_dir).join("libduckdb_static.a").exists(),
-        "DuckDB's static libraries are missing from {lib_dir}: run scripts/duckdb"
+        "DuckDB's static libraries are missing from {lib_dir}: run mise deps"
     );
 
     // GNU ld reads an archive once, so each library must follow what needs it: the registration,

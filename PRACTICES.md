@@ -127,9 +127,9 @@ picks the next from the existing tags, and the first release is `v0.1.0`.
 
 - **Gate.** The workflow refuses unless it runs on `main`, the `check` workflow passed on that
   exact commit, and the tag is free. A failed run is dispatched again, never re-run.
-- **Build.** Each target builds natively: the web app first, then DuckDB's prebuilt libraries
-  (`scripts/duckdb`), then `cargo build --release` with `CODEMAP_VERSION` set to the version
-  without its `v`. Targets: Linux x86_64 and aarch64 on GitHub-hosted runners, macOS aarch64 only
+- **Build.** Each target builds natively: the dependencies (`[deps]` in `mise.toml`, DuckDB's
+  prebuilt libraries among them) and the web app first, then `cargo build --release` with
+  `CODEMAP_VERSION` set to the version without its `v`. Targets: Linux x86_64 and aarch64 on GitHub-hosted runners, macOS aarch64 only
   on the self-hosted `jrh-mini` runner, never a GitHub-hosted macOS one.
 - **Publish.** Only after every target built, one job creates the tag at the built commit and the
   GitHub release with `codemap-vX.Y.Z-TARGET.tar.gz` archives and their `.sha256` files

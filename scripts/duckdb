@@ -2,7 +2,7 @@
 # Fetches DuckDB's prebuilt static libraries into .duckdb/lib, where .cargo/config.toml points the
 # build. Linking them replaces compiling DuckDB's C++ (most of an hour cold on a CI runner).
 # The version must be the DuckDB the `duckdb` crate in Cargo.toml targets (libduckdb-sys
-# `.duckdb-release`); the sha256 pins each archive. Idempotent: does nothing when current.
+# `.duckdb-release`); the sha256 pins each archive. mise runs it when it changes ([deps] in mise.toml).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -15,10 +15,6 @@ case "$(uname -s)-$(uname -m)" in
   *) echo "no prebuilt DuckDB for $(uname -sm)" >&2; exit 1 ;;
 esac
 
-stamp=".duckdb/stamp"
-want="$version $platform $sha256"
-[ "$(cat "$stamp" 2>/dev/null)" != "$want" ] || exit 0
-
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 archive="$tmp/static-libs.tar.gz"
@@ -30,4 +26,3 @@ if command -v sha256sum >/dev/null; then sha256sum -c --status "$tmp/sha256"; el
 rm -rf .duckdb
 mkdir -p .duckdb/lib
 tar -xzf "$archive" -C .duckdb/lib
-echo "$want" > "$stamp"

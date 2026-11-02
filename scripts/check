@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# The one gate (PRACTICES, The check). Steps are silent on pass, print their log on failure, and
-# end with one OVERALL line. Outside CI, fixers run first. Independent steps run concurrently; a
-# phase waits for all of its steps, so every failing log is printed before the OVERALL FAIL line.
+# The one gate (PRACTICES, The check), run as `mise run check`, which installs the dependencies
+# first ([deps] in mise.toml). Steps are silent on pass, print their log on failure, and end with
+# one OVERALL line. Outside CI, fixers run first. Independent steps run concurrently; a phase
+# waits for all of its steps, so every failing log is printed before the OVERALL FAIL line.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -45,8 +46,6 @@ phase() {
 }
 
 web() { (cd web && "$@"); }
-step duckdb scripts/duckdb || true; phase
-[ -d web/node_modules ] || { step deps web npm ci || true; phase; }
 if [ -z "$ci" ]; then
   step fix-rust cargo fmt &
   { step fix-web web npx eslint --fix . && step fix-format web npx prettier --write .; } &

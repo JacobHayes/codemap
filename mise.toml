@@ -1,6 +1,8 @@
 [settings]
 # Rust comes from rust-toolchain.toml, which mise reads as rust's version file.
 idiomatic_version_file_enable_tools = ["rust"]
+# [deps] below is experimental.
+experimental = true
 
 [tools]
 node = "26.12.1"
@@ -25,7 +27,7 @@ run = "scripts/gen"
 [tasks."build:web"]
 description = "Build the web app into web/dist, which the binary embeds"
 dir = "web"
-run = "npm ci && npm run build"
+run = "npm run build"
 
 [tasks.screenshots]
 description = "Walk every view state at 1440 and 1024px in both themes into dist/screenshots/"
@@ -40,3 +42,17 @@ cd web && CODEMAP_SHOTS="$(cd .. && pwd)/dist/screenshots" npx playwright test e
 description = "Run the Vite dev server (proxies /api to `codemap serve`)"
 dir = "web"
 run = "npm run dev"
+
+# Run before every `mise run` when their sources changed or their outputs are missing.
+[deps.npm]
+dir = "web"
+run = "npm ci"
+sources = ["package.json", "package-lock.json"]
+outputs = ["node_modules"]
+auto = true
+
+[deps.duckdb]
+run = "scripts/duckdb"
+sources = ["scripts/duckdb"]
+outputs = [".duckdb/lib"]
+auto = true

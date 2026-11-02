@@ -32,7 +32,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           # Save even when the check fails, so one red run doesn't leave the next one cold.
           cache-on-failure: true
-      - run: npm ci && npx playwright install --with-deps chromium
+      - run: mise deps && npx playwright install --with-deps chromium
         working-directory: web
       - run: mise run check
         env:
