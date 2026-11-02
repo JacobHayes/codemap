@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Regenerates web/src/generated from the Rust wire types. Test runs export them into
+# target/ts-rs (.cargo/config.toml); this clears that, exports, and replaces the committed types
+# whole, so a type that is gone disappears. A failed build stops before anything is replaced.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+rm -rf target/ts-rs
+cargo test --locked -p codemap-core export_bindings
+[ -n "$(ls -A target/ts-rs)" ]
+rm -rf web/src/generated
+cp -R target/ts-rs web/src/generated
+# CI fails when regenerating changed anything, new files included.
+[ -z "${CI:-}" ] || [ -z "$(git status --porcelain web/src/generated)" ]

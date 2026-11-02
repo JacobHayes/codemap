@@ -7,4 +7,3 @@ dist/
 web/test-results
 /.duckdb
 web/playwright-report
-web/src/.generated.*

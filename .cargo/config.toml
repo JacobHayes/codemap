@@ -1,5 +1,5 @@
-# Test runs export the wire types under the target dir; only `scripts/check gen` writes
-# web/src/generated, by overriding this.
+# Test runs export the wire types under the target dir; only `scripts/gen` copies them into
+# web/src/generated.
 [env]
 TS_RS_EXPORT_DIR = { value = "target/ts-rs", relative = true }
 # Link DuckDB's prebuilt static libraries, which `scripts/duckdb` fetches into `.duckdb/lib`.
