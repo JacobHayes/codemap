@@ -13,7 +13,7 @@ for tool in cargo node npm cargo-machete; do
   command -v "$tool" >/dev/null || { echo "OVERALL FAIL: missing tool $tool"; exit 1; }
 done
 
-logs=${CHECK_LOG_DIR:-$(mktemp -d)}
+logs=${CHECK_LOG_DIR:-target/check-logs}
 mkdir -p "$logs"
 rm -f "$logs"/*.failed
 start=$SECONDS
