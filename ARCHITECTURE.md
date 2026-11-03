@@ -248,9 +248,12 @@ repeated switch inside copied functions agree. An area agrees only with an area 
 detector it lacks; acknowledged areas, and findings that name no lines (a rule on a whole
 file), neither give nor take agreement. Agreeing areas are never
 merged: each keeps its card, its group id and its acknowledgements, and lists the others as
-`agreeing` ("Also flagged by <detector>: <title>"). An area's opportunity counts the distinct
-detectors of the area and of everything it agrees with, so agreement raises it the way detectors on
-one subject do; the mass stays its own.
+`agreeing` ("Also flagged by <detector>: <title>", with the detectors of its matching ranges).
+An area's opportunity counts the distinct detectors that agree within it and those of other areas
+whose ranges match the lines its mass comes from, so agreement raises it the way detectors on one
+subject do; the mass stays its own. A duplicate group over a short function inside a large file
+lists the file and gains its size detector, while the file lists the group without doubling its
+whole mass.
 
 A group ranks by its sites' lines counted once. A place that reports disproportion (composition,
 size) ranks by its excess over the peer median, not its total, so a large directory does not

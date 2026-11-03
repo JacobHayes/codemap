@@ -4,9 +4,10 @@
 //! largest finding's lines); confidence only breaks ties. A detector agrees within an area when
 //! its finding points at the lines of the largest, so a small finding elsewhere in a large file
 //! stays in the area without multiplying the file's mass. Areas whose evidence covers the same
-//! lines agree: each keeps its own identity and lists the other, and the detectors of all of
-//! them count once. Test code weighs less: an area's opportunity is discounted by its test
-//! share. Acknowledged areas rank after the rest and are counted, never hidden.
+//! lines agree: each keeps its own identity and lists the other, and a detector of the other
+//! counts once toward an area when its ranges match the lines that area's mass comes from. Test
+//! code weighs less: an area's opportunity is discounted by its test share. Acknowledged areas
+//! rank after the rest and are counted, never hidden.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -176,9 +177,9 @@ pub fn rank(findings: &mut [Finding], test_shares: &[f64], config: &Config) -> V
     let mut areas: Vec<Area> = groups
         .into_iter()
         .map(|(subject, group)| {
-            evidence.push(open_evidence(&group));
-            let (area, detectors) = area_of(subject, &group);
-            agreeing.push(detectors);
+            let (area, massed) = area_of(subject, &group);
+            evidence.push(open_evidence(&group, &massed));
+            agreeing.push(massed.iter().map(|f| f.detector.as_str()).collect());
             area
         })
         .collect();
@@ -197,8 +198,9 @@ pub fn rank(findings: &mut [Finding], test_shares: &[f64], config: &Config) -> V
     areas
 }
 
-/// An area and the detectors that agree within it.
-fn area_of<'a>(subject: &str, shared: &[(&'a Finding, f64)]) -> (Area, BTreeSet<&'a str>) {
+/// An area and the findings that agree within it: the lead, whose lines are its mass, and those
+/// that point at the same lines.
+fn area_of<'a>(subject: &str, shared: &[(&'a Finding, f64)]) -> (Area, Vec<&'a Finding>) {
     let group: Vec<&Finding> = shared.iter().map(|&(f, _)| f).collect();
     let open: Vec<(&Finding, f64)> = shared
         .iter()
@@ -217,7 +219,8 @@ fn area_of<'a>(subject: &str, shared: &[(&'a Finding, f64)]) -> (Area, BTreeSet<
         .max_by(|a, b| a.mass_lines.total_cmp(&b.mass_lines));
     let mass_lines = lead.map_or(0.0, |f| f.mass_lines);
     let reason = lead.map(|f| f.reason.clone()).unwrap_or_default();
-    let agreeing = lead.map_or_else(BTreeSet::new, |lead| agreeing_detectors(lead, &counted));
+    let massed = lead.map_or_else(Vec::new, |lead| agreeing_findings(lead, &counted));
+    let agreeing: BTreeSet<&str> = massed.iter().map(|f| f.detector.as_str()).collect();
     let confidence = counted.iter().map(|f| f.confidence).fold(0.0, f64::max);
     let acknowledged = group.iter().all(|f| f.acknowledged.is_some()).then(|| {
         let reasons: BTreeSet<&str> = group
@@ -256,13 +259,13 @@ fn area_of<'a>(subject: &str, shared: &[(&'a Finding, f64)]) -> (Area, BTreeSet<
         reason,
         acknowledged,
     };
-    (area, agreeing)
+    (area, massed)
 }
 
-/// The detectors whose findings point at the lead finding's lines: its own, and those of the
-/// findings whose evidence agrees with its evidence as two areas' must. A finding without
-/// evidence names no lines and agrees with nothing.
-fn agreeing_detectors<'a>(lead: &'a Finding, findings: &[&'a Finding]) -> BTreeSet<&'a str> {
+/// The findings that point at the lead finding's lines: the lead, and those whose evidence agrees
+/// with its evidence as two areas' must. A finding without evidence names no lines and agrees
+/// with nothing.
+fn agreeing_findings<'a>(lead: &'a Finding, findings: &[&'a Finding]) -> Vec<&'a Finding> {
     let runs = |f: &'a Finding| -> Vec<Run<'a>> {
         f.evidence
             .iter()
@@ -270,9 +273,12 @@ fn agreeing_detectors<'a>(lead: &'a Finding, findings: &[&'a Finding]) -> BTreeS
             .collect()
     };
     let lead_runs = runs(lead);
-    let lead_total = line_total(&lead_runs);
-    let mut detectors = BTreeSet::from([lead.detector.as_str()]);
-    for finding in findings {
+    let lead_total = line_total(lead_runs.iter().copied());
+    let mut agreeing = vec![lead];
+    for &finding in findings {
+        if std::ptr::eq(finding, lead) {
+            continue;
+        }
         let own = runs(finding);
         let matched: Vec<Run> = lead_runs
             .iter()
@@ -285,42 +291,50 @@ fn agreeing_detectors<'a>(lead: &'a Finding, findings: &[&'a Finding]) -> BTreeS
                     })
             })
             .collect();
-        if !matched.is_empty() && enough_shared(&matched, lead_total, line_total(&own)) {
-            detectors.insert(finding.detector.as_str());
+        if !matched.is_empty()
+            && enough_shared(&matched, lead_total, line_total(own.iter().copied()))
+        {
+            agreeing.push(finding);
         }
     }
-    detectors
+    agreeing
 }
 
 /// The line ranges an area's open findings point at, nested ones kept apart so that a function's
-/// range is not lost in its file's, and the detectors that found them. An acknowledged area has
-/// none: it ranks last and neither lends nor takes agreement. A finding without evidence (a rule
-/// on a whole file or directory) names no lines and takes no part.
-fn open_evidence<'a>(group: &[(&'a Finding, f64)]) -> Evidenced<'a> {
+/// range is not lost in its file's, each with the detectors that point at it and whether it is
+/// evidence of a finding the area's mass counts with (`massed`). An acknowledged area has none:
+/// it ranks last and neither lends nor takes agreement. A finding without evidence (a rule on a
+/// whole file or directory) names no lines and takes no part.
+fn open_evidence<'a>(group: &[(&'a Finding, f64)], massed: &[&'a Finding]) -> Evidenced<'a> {
+    let mut ranges: BTreeMap<Run<'a>, Range<'a>> = BTreeMap::new();
     let open = group
         .iter()
         .map(|&(f, _)| f)
-        .filter(|f| f.acknowledged.is_none() && !f.evidence.is_empty());
-    let mut ranges: Vec<Run> = Vec::new();
-    let mut detectors = BTreeSet::new();
+        .filter(|f| f.acknowledged.is_none());
     for finding in open {
-        detectors.insert(finding.detector.as_str());
-        ranges.extend(
-            finding
-                .evidence
-                .iter()
-                .map(|e| (e.path.as_str(), e.start_line, e.end_line)),
-        );
+        let carries_mass = massed.iter().any(|&m| std::ptr::eq(m, finding));
+        for e in &finding.evidence {
+            let range = ranges
+                .entry((e.path.as_str(), e.start_line, e.end_line))
+                .or_default();
+            range.detectors.insert(finding.detector.as_str());
+            range.carries_mass |= carries_mass;
+        }
     }
-    ranges.sort_unstable();
-    ranges.dedup();
-    Evidenced { ranges, detectors }
+    Evidenced { ranges }
 }
 
-/// The lines an area points at and the detectors that point at them.
+/// The lines an area points at.
 struct Evidenced<'a> {
-    ranges: Vec<Run<'a>>,
+    ranges: BTreeMap<Run<'a>, Range<'a>>,
+}
+
+/// One range of an area's evidence: the detectors that point at it, and whether the area's mass
+/// comes from it.
+#[derive(Default)]
+struct Range<'a> {
     detectors: BTreeSet<&'a str>,
+    carries_mass: bool,
 }
 
 /// A line range of one file.
@@ -338,29 +352,54 @@ fn shared_range((a_start, a_end): (u32, u32), (b_start, b_end): (u32, u32)) -> O
 /// Whether the matched lines cover [`AGREEMENT_OVERLAP_SHARE`] of the smaller of two evidence
 /// totals.
 fn enough_shared(matched: &[Run], a_total: u32, b_total: u32) -> bool {
-    f64::from(line_total(matched)) >= AGREEMENT_OVERLAP_SHARE * f64::from(a_total.min(b_total))
+    f64::from(line_total(matched.iter().copied()))
+        >= AGREEMENT_OVERLAP_SHARE * f64::from(a_total.min(b_total))
 }
 
-/// For each pair of areas, the lines of their ranges that are mostly the same lines.
-fn matching_lines<'a>(evidence: &[Evidenced<'a>]) -> BTreeMap<(usize, usize), Vec<Run<'a>>> {
-    let mut by_path: BTreeMap<&str, Vec<(usize, u32, u32)>> = BTreeMap::new();
+/// What two areas' ranges share, by the pair's order.
+#[derive(Default)]
+struct Shared<'a> {
+    /// The lines of their ranges that are mostly the same lines.
+    runs: Vec<Run<'a>>,
+    /// For each side, the detectors of the other side's matching ranges.
+    brought: [BTreeSet<&'a str>; 2],
+    /// For each side, those of them whose ranges match lines its mass comes from.
+    counted: [BTreeSet<&'a str>; 2],
+}
+
+/// For each pair of areas, what their ranges share.
+fn matching_lines<'a>(evidence: &[Evidenced<'a>]) -> BTreeMap<(usize, usize), Shared<'a>> {
+    let mut by_path: BTreeMap<&str, Vec<(usize, u32, u32, &Range<'a>)>> = BTreeMap::new();
     for (i, found) in evidence.iter().enumerate() {
-        for &(path, start, end) in &found.ranges {
-            by_path.entry(path).or_default().push((i, start, end));
+        for (&(path, start, end), range) in &found.ranges {
+            by_path
+                .entry(path)
+                .or_default()
+                .push((i, start, end, range));
         }
     }
-    let mut matched: BTreeMap<(usize, usize), Vec<Run>> = BTreeMap::new();
+    let mut matched: BTreeMap<(usize, usize), Shared> = BTreeMap::new();
     for (&path, ranges) in &by_path {
-        for (n, &(a, a_start, a_end)) in ranges.iter().enumerate() {
-            for &(b, b_start, b_end) in &ranges[n + 1..] {
+        for (n, &(a, a_start, a_end, a_range)) in ranges.iter().enumerate() {
+            for &(b, b_start, b_end, b_range) in &ranges[n + 1..] {
                 if a == b {
                     continue;
                 }
-                if let Some((start, end)) = shared_range((a_start, a_end), (b_start, b_end)) {
-                    matched
-                        .entry((a.min(b), a.max(b)))
-                        .or_default()
-                        .push((path, start, end));
+                let Some((start, end)) = shared_range((a_start, a_end), (b_start, b_end)) else {
+                    continue;
+                };
+                let (low, high) = if a < b {
+                    (a_range, b_range)
+                } else {
+                    (b_range, a_range)
+                };
+                let shared = matched.entry((a.min(b), a.max(b))).or_default();
+                shared.runs.push((path, start, end));
+                for (side, own, other) in [(0, low, high), (1, high, low)] {
+                    shared.brought[side].extend(&other.detectors);
+                    if own.carries_mass {
+                        shared.counted[side].extend(&other.detectors);
+                    }
                 }
             }
         }
@@ -368,60 +407,62 @@ fn matching_lines<'a>(evidence: &[Evidenced<'a>]) -> BTreeMap<(usize, usize), Ve
     matched
 }
 
-fn line_total(ranges: &[Run]) -> u32 {
-    distinct_lines_by_path(ranges.iter().copied())
-        .values()
-        .sum()
+fn line_total<'a>(ranges: impl Iterator<Item = Run<'a>>) -> u32 {
+    distinct_lines_by_path(ranges).values().sum()
 }
 
 /// Links areas whose evidence covers the same lines, and counts the detectors that agree within
-/// each area (`agreeing`, in the areas' order) together with those of the areas it agrees with
-/// once each. Two areas agree when the matching lines cover [`AGREEMENT_OVERLAP_SHARE`] of the
-/// smaller one's lines, and each lists the other only when it brings a detector the first lacks;
-/// areas never merge, so each keeps its identity.
+/// each area (`agreeing`, in the areas' order) together with those of other areas whose ranges
+/// match the lines its mass comes from. Two areas agree when the matching lines cover
+/// [`AGREEMENT_OVERLAP_SHARE`] of the smaller one's lines, and each lists the other, with the
+/// detectors of its matching ranges, only when it brings a detector the first lacks; areas never
+/// merge, so each keeps its identity.
 fn agree(areas: &mut [Area], evidence: &[Evidenced], agreeing: &[BTreeSet<&str>]) {
-    let totals: Vec<u32> = evidence.iter().map(|e| line_total(&e.ranges)).collect();
-    let mut links: Vec<Vec<usize>> = vec![Vec::new(); areas.len()];
-    for ((a, b), ranges) in matching_lines(evidence) {
-        if !enough_shared(&ranges, totals[a], totals[b]) {
+    let totals: Vec<u32> = evidence
+        .iter()
+        .map(|e| line_total(e.ranges.keys().copied()))
+        .collect();
+    let mut links: Vec<Vec<(usize, BTreeSet<&str>)>> = vec![Vec::new(); areas.len()];
+    let mut counted: Vec<BTreeSet<&str>> = agreeing.to_vec();
+    for ((a, b), shared) in matching_lines(evidence) {
+        if !enough_shared(&shared.runs, totals[a], totals[b]) {
             continue;
         }
-        // Each area links to the other only when the other brings a detector it lacks.
-        for (to, from) in [(a, b), (b, a)] {
-            let brings = evidence[from]
-                .detectors
+        let Shared {
+            brought: [brought_a, brought_b],
+            counted: [counted_a, counted_b],
+            ..
+        } = shared;
+        for (to, from, brought, gained) in
+            [(a, b, brought_a, counted_a), (b, a, brought_b, counted_b)]
+        {
+            counted[to].extend(gained);
+            if brought
                 .iter()
-                .any(|d| !areas[to].detectors.iter().any(|own| own == d));
-            if brings {
-                links[to].push(from);
+                .any(|d| !areas[to].detectors.iter().any(|own| own == d))
+            {
+                links[to].push((from, brought));
             }
         }
     }
     let snapshot = areas.to_vec();
-    for ((area, others), within_area) in areas.iter_mut().zip(&mut links).zip(agreeing) {
-        let mut detectors = within_area.clone();
-        let own = u32::try_from(detectors.len()).unwrap_or(u32::MAX);
-        for &other in &*others {
-            detectors.extend(&evidence[other].detectors);
-        }
-        let all = u32::try_from(detectors.len()).unwrap_or(u32::MAX);
-        area.opportunity *= f64::from(all) / f64::from(own);
-        others.sort_by(|&x, &y| {
-            snapshot[y]
+    let lens = |set: &BTreeSet<&str>| f64::from(u32::try_from(set.len()).unwrap_or(u32::MAX));
+    for (((area, others), within), all) in
+        areas.iter_mut().zip(&mut links).zip(agreeing).zip(&counted)
+    {
+        area.opportunity *= lens(all) / lens(within);
+        others.sort_by(|(x, _), (y, _)| {
+            snapshot[*y]
                 .mass_lines
-                .total_cmp(&snapshot[x].mass_lines)
-                .then(snapshot[x].subject.cmp(&snapshot[y].subject))
+                .total_cmp(&snapshot[*x].mass_lines)
+                .then(snapshot[*x].subject.cmp(&snapshot[*y].subject))
         });
         area.agreeing = others
             .iter()
-            .map(|&other| AgreeingArea {
-                subject: snapshot[other].subject.clone(),
-                title: snapshot[other].title.clone(),
-                detectors: evidence[other]
-                    .detectors
-                    .iter()
-                    .map(|&d| d.to_owned())
-                    .collect(),
+            .map(|(other, brought)| AgreeingArea {
+                subject: snapshot[*other].subject.clone(),
+                title: snapshot[*other].title.clone(),
+                detectors: brought.iter().map(|&d| d.to_owned()).collect(),
             })
             .collect();
     }
@@ -616,6 +657,24 @@ mod tests {
         ];
         let areas = rank(&mut findings, &[0.0; 3], &Config::default());
         assert_eq!(area(&areas, "f.rs").agreeing.len(), 1);
+    }
+
+    #[test]
+    fn agreement_away_from_an_area_s_mass_is_listed_but_does_not_multiply_it() {
+        let in_file = |detector: &str, area: &str, mass: f64, runs: &[(u32, u32)]| {
+            Finding::new(detector, SubjectKind::File, area, String::new(), mass, 0.5)
+                .evidence("f.rs", runs)
+        };
+        let mut findings = vec![
+            in_file("size", "f.rs", 3000.0, &[(1, 3000)]),
+            in_file("size", "f.rs", 90.0, &[(200, 292)]),
+            in_file("duplication", "copies", 90.0, &[(200, 290)]),
+        ];
+        let areas = rank(&mut findings, &[0.0; 3], &Config::default());
+        let (file, copies) = (area(&areas, "f.rs"), area(&areas, "copies"));
+        assert_eq!(file.agreeing.len(), 1);
+        assert!((file.opportunity - file.mass_lines).abs() < 1e-9);
+        assert!((copies.opportunity - 2.0 * copies.mass_lines).abs() < 1e-9);
     }
 
     #[test]
