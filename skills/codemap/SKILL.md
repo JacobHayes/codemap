@@ -32,13 +32,15 @@ fix roles once before trusting the areas.
    implementations. Size findings count only files in a recognised programming language, so
    data files do not rank, but they still skew the role breakdown.
 3. Record fixes in `.codemap/config.toml`. Keys are gitignore-style globs, values are role
-   names; the first match wins:
+   names; globs are tried in sorted order and the first match wins. Common conventions
+   (`tests/`, `fixtures/`, `testing/`, `mocks/`, `__mocks__/`, `*.test.*`, `*.stories.*`,
+   `examples/`, `docs/`) are built in, so record only what is particular to the project:
 
    ```toml
    [roles]
    "api/openapi.json" = "generated"
    "third_party_src/" = "vendored"
-   "testdata/" = "test"
+   "src/fakes/" = "test"
    ```
 
 4. Re-run `codemap overview` and confirm the breakdown now matches the project.

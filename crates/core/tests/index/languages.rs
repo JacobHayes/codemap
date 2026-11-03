@@ -187,6 +187,22 @@ fn snapshots_bundles_and_build_output_are_generated_and_vendored_dirs_vendored()
 }
 
 #[test]
+fn test_doubles_and_test_support_are_tests_and_stories_are_examples() {
+    let role = |path: &str| codemap_core::role_for_path(path, None, "").as_str();
+    for path in [
+        "src/api/__mocks__/client.ts",
+        "src/search/mocks/data.ts",
+        "src/agents/testing/harness.ts",
+    ] {
+        assert_eq!(role(path), "test", "{path}");
+    }
+    for path in ["src/ui/Button.stories.tsx", "src/ui/Button.stories.ts"] {
+        assert_eq!(role(path), "example", "{path}");
+    }
+    assert_eq!(role("src/ui/Button.tsx"), "prod");
+}
+
+#[test]
 fn other_text_files_get_lines_and_tokens_and_binary_files_only_a_size() {
     let tree = tree_of("text");
     std::fs::write(tree.path().join("blob.bin"), [0_u8, 1, 2, 255]).unwrap();

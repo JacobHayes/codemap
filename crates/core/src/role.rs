@@ -34,6 +34,9 @@ const TEST_DIRS: &[&str] = &[
     "fixtures",
     "testdata",
     "e2e",
+    "testing",
+    "mocks",
+    "__mocks__",
 ];
 const BENCH_DIRS: &[&str] = &["benches", "bench", "benchmarks"];
 const EXAMPLE_DIRS: &[&str] = &["examples", "example"];
@@ -105,7 +108,8 @@ pub fn role_for_path(path: &str, language: Option<&Language>, text: &str) -> Rol
         Role::Test
     } else if in_dir(BENCH_DIRS) {
         Role::Bench
-    } else if in_dir(EXAMPLE_DIRS) {
+    } else if in_dir(EXAMPLE_DIRS) || file.contains(".stories.") {
+        // Storybook stories show components in use; they are not the components.
         Role::Example
     } else if in_dir(SCRIPT_DIRS) || SCRIPT_EXTENSIONS.contains(&extension) {
         Role::Script
