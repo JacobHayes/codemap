@@ -106,6 +106,28 @@ fn composition_measures_test_code_against_production_lines() {
 }
 
 #[test]
+fn composition_does_not_count_test_data_as_test_code() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline_dirs(dir.path(), 20);
+    // A little production code with large recorded fixtures beside it: data, not tests.
+    write(dir.path(), "pkg/src/a.rs", &plain_functions("a", 8));
+    let events: String = (0..600).map(|i| format!("{{\"event\": {i}}}\n")).collect();
+    for i in 0..3 {
+        write(
+            dir.path(),
+            &format!("pkg/tests/fixtures/run{i}.json"),
+            &events,
+        );
+    }
+    let index = indexed(dir.path());
+    assert!(
+        findings_of(&index, "composition")
+            .iter()
+            .all(|f| !f.subject.starts_with("pkg")),
+    );
+}
+
+#[test]
 fn size_fires_on_an_outlier_file_function_and_concentrated_directory() {
     let dir = tempfile::tempdir().unwrap();
     baseline_dirs(dir.path(), 25);

@@ -29,8 +29,8 @@ fix roles once before trusting the areas.
    code with no marker, snapshots and data (test vectors, fixtures, fonts, tables) that are
    not tests, copied-in code. Test doubles and fakes that live outside test directories (a
    `FakeHost` in `src/`) belong in `[roles]` as `test`, or they count as production
-   implementations. Size findings count only files in a recognised programming language, so
-   data files do not rank, but they still skew the role breakdown.
+   implementations. Size findings and test-code shares count only files in a recognised
+   programming language, so data files do not rank, but they still skew the role breakdown.
 3. Record fixes in `.codemap/config.toml`. Keys are gitignore-style globs, values are role
    names; globs are tried in sorted order and the first match wins. Common conventions
    (`tests/`, `fixtures/`, `testing/`, `mocks/`, `__mocks__/`, `*.test.*`, `*.stories.*`,

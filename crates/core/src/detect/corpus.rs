@@ -21,6 +21,8 @@ pub struct Agg {
     pub tokens: f64,
     /// Lines by role (rows) and concern (columns).
     pub cells: [[f64; Concern::ALL.len()]; Role::ALL.len()],
+    /// Lines by role in files written in a recognised programming language.
+    pub code_roles: [f64; Role::ALL.len()],
     /// Production lines in type-declaration files, and the comment lines among them.
     pub declaration_prod: f64,
     pub declaration_comment: f64,
@@ -38,6 +40,9 @@ impl Agg {
                 *a += b;
             }
         }
+        for (a, b) in self.code_roles.iter_mut().zip(other.code_roles) {
+            *a += b;
+        }
     }
 
     /// Lines of a concern across every role.
@@ -49,6 +54,11 @@ impl Agg {
     /// Lines of a role across every concern.
     pub fn role(&self, role: Role) -> f64 {
         self.cells[position(&Role::ALL, role)].iter().sum()
+    }
+
+    /// Lines of a role in code files.
+    pub fn code_role(&self, role: Role) -> f64 {
+        self.code_roles[position(&Role::ALL, role)]
     }
 
     /// Lines of a concern within one role.
@@ -129,6 +139,9 @@ impl Corpus {
             file.lines += lines;
             file.tokens += tokens;
             file.cells[position(&Role::ALL, role)][position(&Concern::ALL, concern)] += lines;
+            if is_code {
+                file.code_roles[position(&Role::ALL, role)] += lines;
+            }
             if declaration {
                 file.declaration_prod += lines;
                 if concern == Concern::Comment {

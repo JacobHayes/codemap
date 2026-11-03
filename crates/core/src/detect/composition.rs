@@ -3,7 +3,10 @@
 //!
 //! Every measure declares its population, the role whose lines the share is of: handling,
 //! comments and logging among production lines, assertions among test lines, test code and
-//! documentation against production lines. A subject with no lines in the population has no
+//! documentation against production lines. Test code is counted, with the production lines it is
+//! set against, only in files written in a recognised programming language: fixtures, golden
+//! files and specs under a test directory are data, not tests, as the size detector also holds.
+//! A subject with no lines in the population has no
 //! share, so a tests directory is not flagged for being tests. Comments are judged only among
 //! the lines of files whose comments are commentary: documentation files are another role, so
 //! their prose is not production commentary, and type-declaration files (`.d.ts`, `.pyi`) are
@@ -55,6 +58,8 @@ struct Category {
     population: Role,
     /// Type-declaration files are outside the population.
     skips_declarations: bool,
+    /// Only lines of code files count, in the category and the population.
+    code_only: bool,
     /// How the lines are called in a sentence.
     words: &'static str,
 }
@@ -65,16 +70,18 @@ const fn concern(concern: Concern, role: Role, words: &'static str) -> Category 
         concern: Some(concern),
         population: role,
         skips_declarations: matches!(concern, Concern::Comment),
+        code_only: false,
         words,
     }
 }
 
-const fn against_prod(role: Role, words: &'static str) -> Category {
+const fn against_prod(role: Role, words: &'static str, code_only: bool) -> Category {
     Category {
         role,
         concern: None,
         population: Role::Prod,
         skips_declarations: false,
+        code_only,
         words,
     }
 }
@@ -84,13 +91,16 @@ const CATEGORIES: [Category; 6] = [
     concern(Concern::Comment, Role::Prod, "comments"),
     concern(Concern::Assertion, Role::Test, "assertions"),
     concern(Concern::Logging, Role::Prod, "logging"),
-    against_prod(Role::Test, "test code"),
-    against_prod(Role::Docs, "documentation"),
+    against_prod(Role::Test, "test code", true),
+    against_prod(Role::Docs, "documentation", false),
 ];
 
 impl Category {
     /// The lines in the category and the lines of its population.
     fn parts(&self, agg: &Agg) -> (f64, f64) {
+        if self.code_only {
+            return (agg.code_role(self.role), agg.code_role(self.population));
+        }
         let lines = self
             .concern
             .map_or_else(|| agg.role(self.role), |c| agg.cell(self.role, c));
