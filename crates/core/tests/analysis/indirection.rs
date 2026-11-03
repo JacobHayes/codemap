@@ -394,6 +394,32 @@ fn functions_that_are_values_in_an_object_literal_are_adapters_not_wrappers() {
 }
 
 #[test]
+fn production_code_does_not_resolve_into_tests_nor_pick_among_same_named_definitions() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    // `lookup` exists only in a test, and `load` twice beside the caller.
+    write(
+        dir.path(),
+        "web/api.test.ts",
+        "export function lookup(id: string) {\n  const key = id.trim();\n  return key + id;\n}\n",
+    );
+    for name in ["a", "b"] {
+        write(
+            dir.path(),
+            &format!("web/{name}.ts"),
+            "export function load(path: string) {\n  const text = path.trim();\n  return text + path;\n}\n",
+        );
+    }
+    write(
+        dir.path(),
+        "web/api.ts",
+        "export function read(id: string) {\n  return lookup(id);\n}\n\nexport function open(path: string) {\n  return load(path);\n}\n",
+    );
+    let index = indexed(dir.path());
+    assert!(signal(&index, "pass_through").is_empty());
+}
+
+#[test]
 fn an_interface_in_a_declaration_file_is_not_a_single_implementation() {
     let found_with = |interface_path: &str| {
         let dir = tempfile::tempdir().unwrap();

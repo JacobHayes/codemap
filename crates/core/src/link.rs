@@ -19,6 +19,8 @@
 //! - A reference resolves only within its own language: a TypeScript `test` call is not the Rust
 //!   function `test`. JavaScript and TypeScript call each other, so they count as one.
 //! - Generated and vendored symbols are neither ends of an edge: nobody can cut them.
+//! - Production code never calls into tests, so a reference from outside a test resolves only
+//!   among symbols that are not tests.
 //! - A reference outside any symbol, and one that resolves to the symbol it sits in
 //!   (recursion, or a method delegating to a same-named method of another type), makes no edge.
 //! - An implementation reference that names the symbol it sits in (the grammar reads
@@ -30,7 +32,7 @@
 
 use std::collections::BTreeMap;
 
-use codemap_lang::language_for_path;
+use codemap_lang::{Role, language_for_path};
 use duckdb::params;
 
 use crate::detect::is_ranked;
@@ -104,12 +106,14 @@ impl<'a> Definitions<'a> {
         Self(by_name)
     }
 
-    /// The candidates of the first tier that has any, and that tier's confidence.
-    fn resolve(&self, reference: &Reference) -> Option<(Vec<&'a SymbolRow>, f64)> {
+    /// The candidates of the first tier that has any, and that tier's confidence. A reference
+    /// from outside a test (`from_test` false) never resolves to a test.
+    fn resolve(&self, reference: &Reference, from_test: bool) -> Option<(Vec<&'a SymbolRow>, f64)> {
         let files = self.0.get(reference.name.as_str())?;
         let reference_family = family(&reference.path);
         let accepts = |symbol: &&SymbolRow| {
             family(&symbol.path) == reference_family
+                && (from_test || symbol.role != Role::Test.as_str())
                 && match reference.kind.as_str() {
                     "call" | "class" => matches!(symbol.kind.as_str(), "function" | "type"),
                     _ => symbol.kind == "type",
@@ -170,7 +174,8 @@ fn resolve_all(symbols: &[SymbolRow], refs: &[Reference]) -> Vec<Edge> {
         if reference.kind == IMPLEMENTATION && reference.name == source.name {
             continue;
         }
-        let Some((candidates, tier)) = definitions.resolve(reference) else {
+        let from_test = source.role == Role::Test.as_str();
+        let Some((candidates, tier)) = definitions.resolve(reference, from_test) else {
             continue;
         };
         if candidates.len() > CANDIDATES_MAX {

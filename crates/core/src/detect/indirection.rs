@@ -5,15 +5,15 @@
 //!
 //! - **Pass-through wrappers.** A function of at most [`WRAPPER_LINES_MAX`] lines whose body is
 //!   one call that passes its own parameters on (the extractor decides the shape, see
-//!   `shape.rs`) and whose callee resolves to a function or type of the codebase with
-//!   confidence of at least [`TARGET_CONFIDENCE_MIN`]. Wrappers that forward to wrappers are one
-//!   finding, the chain, listed from the outermost call inward and ending at the function that
-//!   does the work. A function that forwards to a function of its own name is left out: it
-//!   delegates to another type's method, which names cannot tell from recursion. The extractor
-//!   gives no forwarded callee to functions whose signature another API dictates: methods a
-//!   contract demands (of a class that implements or extends something, or of a trait `impl`
-//!   block) and functions that are values in an object literal (a callback option, an interface
-//!   member).
+//!   `shape.rs`) and whose callee's name resolves to exactly one function or type of the codebase:
+//!   with several, the name does not say which one does the work. Wrappers that forward to
+//!   wrappers are one finding, the chain, listed from the outermost call inward and ending at the
+//!   function that does the work. A function that forwards to a function of its own name is left
+//!   out: it delegates to another type's method, which names cannot tell from recursion. The
+//!   extractor gives no forwarded callee to functions whose signature another API dictates:
+//!   methods a contract demands (of a class that implements or extends something, or of a trait
+//!   `impl` block) and functions that are values in an object literal (a callback option, an
+//!   interface member).
 //! - **Single-implementation abstractions.** A trait, interface or abstract class that exactly
 //!   one production type implements or extends (a blanket implementation, whose implementor is a
 //!   generic parameter, counts as many). Abstractions in type-declaration files (`.d.ts`) describe
@@ -37,9 +37,6 @@ use crate::role::is_declaration_file;
 /// A wrapper is small: a signature and a call, with room for a long parameter list that rustfmt
 /// puts one to a line.
 const WRAPPER_LINES_MAX: u32 = 10;
-/// Edges below this confidence (a name that matches more than two definitions) do not say what
-/// a function forwards to.
-const TARGET_CONFIDENCE_MIN: f64 = 0.4;
 /// An implementor edge below this confidence may belong to another abstraction of the same name.
 const IMPLEMENTOR_CONFIDENCE_MIN: f64 = 0.5;
 /// Names quoted in a reason.
@@ -149,15 +146,14 @@ impl Population {
             if lines(function) > WRAPPER_LINES_MAX {
                 continue;
             }
-            let target = from
+            let mut targets = from
                 .get(function.id.as_str())
                 .into_iter()
                 .flatten()
-                .filter(|edge| edge.confidence >= TARGET_CONFIDENCE_MIN)
                 .filter_map(|edge| Some((self.get(&edge.to)?, edge.confidence)))
-                .filter(|(target, _)| target.name == callee && target.name != function.name)
-                .max_by(|a, b| a.1.total_cmp(&b.1));
-            if let Some(target) = target {
+                .filter(|(target, _)| target.name == callee && target.name != function.name);
+            // A name that resolves to several definitions does not say which one does the work.
+            if let (Some(target), None) = (targets.next(), targets.next()) {
                 found.insert(function.id.as_str(), target);
             }
         }
