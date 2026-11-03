@@ -445,8 +445,13 @@ fn nest(
         let index = symbol_of[at];
         line_symbols[first..=last].fill(Some(index));
         let (forwards, abstraction) = shape_of(kind, language, kinds, &node, source);
-        // The contract dictates the signature of what it demands, so that is not a wrapper.
-        let forwards = forwards.filter(|_| !open.last().is_some_and(|&(.., demanded)| demanded));
+        // The contract dictates the signature of what it demands, and a slot in a value
+        // container another API's, so neither is a wrapper.
+        let in_value = node
+            .parent()
+            .is_some_and(|parent| language.value_containers.contains(&parent.kind()));
+        let forwards =
+            forwards.filter(|_| !in_value && !open.last().is_some_and(|&(.., demanded)| demanded));
         symbols.push(SymbolFact {
             kind,
             name: name.clone(),

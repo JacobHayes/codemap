@@ -102,6 +102,7 @@ pub static JAVASCRIPT: Language = Language {
     case_label_fields: CASE_LABEL_FIELDS,
     case_names_bind: false,
     abort_callees: &[],
+    value_containers: &["object"],
     case_fallthrough: true,
     capitalised_constructors: false,
     callee_fields: &["function"],

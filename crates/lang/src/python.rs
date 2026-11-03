@@ -35,6 +35,7 @@ pub static PYTHON: Language = Language {
     case_label_fields: &["case_pattern"],
     case_names_bind: true,
     abort_callees: &[],
+    value_containers: &[],
     case_fallthrough: false,
     capitalised_constructors: true,
     callee_fields: &["function"],

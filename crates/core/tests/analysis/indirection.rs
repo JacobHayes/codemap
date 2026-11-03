@@ -374,3 +374,21 @@ fn an_abstraction_group_keeps_its_id_when_its_implementation_is_replaced() {
     };
     assert_eq!(id_with("SqlStore"), id_with("MemStore"));
 }
+
+const SINK: &str = "export function sink(kind: string) {\n  const upper = kind.toUpperCase();\n  return upper + kind;\n}\n";
+
+#[test]
+fn functions_that_are_values_in_an_object_literal_are_adapters_not_wrappers() {
+    let dir = tempfile::tempdir().unwrap();
+    baseline(dir.path(), 5);
+    write(dir.path(), "web/sink.ts", SINK);
+    write(
+        dir.path(),
+        "web/wire.ts",
+        "export function wrap(kind: string) {\n  return sink(kind);\n}\n\nexport const handlers = {\n  onKind: (kind: string) => sink(kind),\n  apply(kind: string) {\n    return sink(kind);\n  },\n};\n",
+    );
+    let index = indexed(dir.path());
+    let found = signal(&index, "pass_through");
+    assert_eq!(found.len(), 1);
+    assert!(found[0].reason.contains("wrap"), "{}", found[0].reason);
+}

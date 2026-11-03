@@ -40,6 +40,7 @@ pub static RUST: Language = Language {
     case_label_fields: &["pattern"],
     case_names_bind: true,
     abort_callees: &["panic", "unreachable", "todo", "unimplemented"],
+    value_containers: &[],
     case_fallthrough: false,
     capitalised_constructors: true,
     callee_fields: &["function", "macro"],

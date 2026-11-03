@@ -174,6 +174,10 @@ pub struct Language {
     /// holds nothing else is a trap for the cases it does not name. A `throw` or `raise`
     /// statement is recognised by its node kind.
     pub abort_callees: &'static [&'static str],
+    /// Node kinds whose entries are values handed to whoever receives them (a JavaScript object
+    /// literal): a function there fills a slot another API defines, such as a callback option
+    /// or an interface member, so one that only forwards is an adapter, not a wrapper.
+    pub value_containers: &'static [&'static str],
     /// Whether a case with no statements runs the next case's (JavaScript), as against ending
     /// the switch (Go).
     pub case_fallthrough: bool,

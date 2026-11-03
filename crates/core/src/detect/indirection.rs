@@ -9,9 +9,11 @@
 //!   confidence of at least [`TARGET_CONFIDENCE_MIN`]. Wrappers that forward to wrappers are one
 //!   finding, the chain, listed from the outermost call inward and ending at the function that
 //!   does the work. A function that forwards to a function of its own name is left out: it
-//!   delegates to another type's method, which names cannot tell from recursion. Methods a contract demands are left out (the extractor
-//!   gives them no forwarded callee): those of a class that implements or extends something, and
-//!   of a trait `impl` block.
+//!   delegates to another type's method, which names cannot tell from recursion. The extractor
+//!   gives no forwarded callee to functions whose signature another API dictates: methods a
+//!   contract demands (of a class that implements or extends something, or of a trait `impl`
+//!   block) and functions that are values in an object literal (a callback option, an interface
+//!   member).
 //! - **Single-implementation abstractions.** A trait, interface or abstract class that exactly
 //!   one production type implements or extends (a blanket implementation, whose implementor is a
 //!   generic parameter, counts as many). An abstraction whose name also resolves to

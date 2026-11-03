@@ -47,6 +47,7 @@ pub static GO: Language = Language {
     case_label_fields: &["value", "type"],
     case_names_bind: false,
     abort_callees: &["panic"],
+    value_containers: &[],
     case_fallthrough: false,
     capitalised_constructors: false,
     callee_fields: &["function"],
