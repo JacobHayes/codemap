@@ -392,3 +392,24 @@ fn functions_that_are_values_in_an_object_literal_are_adapters_not_wrappers() {
     assert_eq!(found.len(), 1);
     assert!(found[0].reason.contains("wrap"), "{}", found[0].reason);
 }
+
+#[test]
+fn an_interface_in_a_declaration_file_is_not_a_single_implementation() {
+    let found_with = |interface_path: &str| {
+        let dir = tempfile::tempdir().unwrap();
+        baseline(dir.path(), 5);
+        write(
+            dir.path(),
+            interface_path,
+            "export interface Pty {\n  write(data: string): void;\n}\n",
+        );
+        write(
+            dir.path(),
+            "web/pty.ts",
+            "export class LocalPty implements Pty {\n  write(data: string) {\n    console.log(data.trim());\n  }\n}\n",
+        );
+        signal(&indexed(dir.path()), "single_implementation").len()
+    };
+    assert_eq!(found_with("web/types.ts"), 1);
+    assert_eq!(found_with("web/vendor.d.ts"), 0);
+}

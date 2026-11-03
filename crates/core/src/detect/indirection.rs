@@ -16,7 +16,8 @@
 //!   member).
 //! - **Single-implementation abstractions.** A trait, interface or abstract class that exactly
 //!   one production type implements or extends (a blanket implementation, whose implementor is a
-//!   generic parameter, counts as many). An abstraction whose name also resolves to
+//!   generic parameter, counts as many). Abstractions in type-declaration files (`.d.ts`) describe
+//!   code written elsewhere and are left out. An abstraction whose name also resolves to
 //!   others with low confidence is skipped, because its implementors cannot be counted.
 //!
 //! A chain of several wrappers and an abstraction with its implementation are groups: one
@@ -31,6 +32,7 @@ use codemap_lang::Role;
 use super::{Context, Detector, Finding, SubjectKind, count, group_id, is_ranked, places_title};
 use crate::link::{Edge, IMPLEMENTATION, edges};
 use crate::reader::{Index, QueryError, SymbolRow};
+use crate::role::is_declaration_file;
 
 /// A wrapper is small: a signature and a call, with room for a long parameter list that rustfmt
 /// puts one to a line.
@@ -323,7 +325,13 @@ fn abstraction_findings(population: &Population) -> Vec<Finding> {
     population
         .symbols
         .iter()
-        .filter(|symbol| symbol.abstraction && Population::is_production(symbol))
+        // A declaration file describes code written elsewhere; its interfaces are not this
+        // codebase's to merge.
+        .filter(|symbol| {
+            symbol.abstraction
+                && Population::is_production(symbol)
+                && !is_declaration_file(&symbol.path)
+        })
         .filter_map(|abstraction| {
             let incoming = implementors.get(abstraction.id.as_str())?;
             if incoming
