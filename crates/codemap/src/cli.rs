@@ -1,5 +1,6 @@
 //! Argument parsing and dispatch. Each verb builds one `Query` and prints its answer.
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
@@ -144,12 +145,25 @@ fn dispatch(command: Command) -> Result<(), Failure> {
 /// Brings the index up to date (a hash-and-diff, cheap when nothing changed), then answers.
 fn ask(output: &Output, query: &Query) -> Result<(), Failure> {
     let answer = answer_at(&output.root, query)?;
-    if output.json {
-        println!("{}", serde_json::to_string(&Envelope::from(answer))?);
+    let text = if output.json {
+        serde_json::to_string(&Envelope::from(answer))? + "\n"
     } else {
-        print!("{}", render::render(&answer));
+        render::render(&answer)
+    };
+    emit(&text)
+}
+
+/// Writes an answer to stdout. A reader that closed the pipe (`codemap tree | head`) has what it
+/// wanted, so that ends the command quietly instead of panicking.
+fn emit(text: &str) -> Result<(), Failure> {
+    let mut stdout = std::io::stdout().lock();
+    match stdout
+        .write_all(text.as_bytes())
+        .and_then(|()| stdout.flush())
+    {
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        result => Ok(result?),
     }
-    Ok(())
 }
 
 pub(crate) fn answer_at(root: &Path, query: &Query) -> Result<Answer, Failure> {
