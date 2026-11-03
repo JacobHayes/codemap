@@ -57,7 +57,8 @@ depth?: number, } | { "kind": "xtab", rows: Axis, cols: Axis,
  */
 measure?: MeasureRef, filter: Filter, 
 /**
- * Path components kept on a path axis. [`PATH_DEPTH_DEFAULT`] when absent.
+ * Path components a path axis keeps below the filter's path. [`PATH_DEPTH_DEFAULT`]
+ * when absent.
  */
 pathDepth?: number, } | { "kind": "areas", 
 /**

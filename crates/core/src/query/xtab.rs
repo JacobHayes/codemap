@@ -15,7 +15,7 @@ use super::tree::SizeInfo;
 use crate::measure::{Filter, Measure, NO_SYMBOL, OTHER_LANGUAGE};
 use crate::reader::{Index, QueryError};
 
-/// Path components kept in a path axis unless the query says otherwise.
+/// Path components a path axis keeps below the filter's path unless the query says otherwise.
 pub const PATH_DEPTH_DEFAULT: u32 = 1;
 
 /// A dimension a cross-tab can be laid out along.
@@ -28,7 +28,7 @@ pub enum Axis {
     Language,
     /// The kind of the innermost symbol a line sits in.
     Kind,
-    /// The first `pathDepth` components of the file's path.
+    /// The file's path, cut `pathDepth` components below the filter's path.
     Path,
 }
 
@@ -84,7 +84,7 @@ pub struct XtabCell {
 pub struct Xtab {
     pub row_axis: Axis,
     pub col_axis: Axis,
-    /// The depth path axes were cut at.
+    /// The depth path axes were cut at, below the filter's path.
     pub path_depth: u32,
     pub measure: SizeInfo,
     pub total: f64,
@@ -124,7 +124,10 @@ pub(crate) fn xtab(index: &Index, args: &Args) -> Result<Xtab, QueryError> {
     let Measure::Sum { base, .. } = args.measure else {
         return Err(QueryError::SizeIsRatio);
     };
-    let depth = args.path_depth.max(1) as usize;
+    let below = args.filter.path.as_deref().map_or(0, |path| {
+        path.split('/').filter(|part| !part.is_empty()).count()
+    });
+    let depth = below + args.path_depth.max(1) as usize;
     let keys = [args.row_axis.column(), args.col_axis.column()];
     let mut cells: BTreeMap<(String, String), f64> = BTreeMap::new();
     let mut row_totals: BTreeMap<String, f64> = BTreeMap::new();

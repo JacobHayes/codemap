@@ -22,9 +22,10 @@ fix roles once before trusting the areas.
 
 1. `codemap overview`: read the role breakdown. Large generated, config or test shares
    deserve a look.
-2. Find the top-mass files: `codemap tree --depth 2` for the whole index, then
-   `codemap tree --role <role> --depth 2` for each role, narrowing with `--path <dir>`. Read
-   the biggest files of each, because the largest masses in a codebase are often not its code.
+2. Find the top-mass files: `codemap xtab --rows path --cols language --path-depth 64 --json`
+   lists every file, largest first, with its lines by language (`other` is everything without a
+   grammar); add `--role <role>` for each role and `--path <dir>` to narrow. Read the biggest
+   files of each, because the largest masses in a codebase are often not its code.
    Mark what is not the project's own code: vendored or bundled third-party source, generated
    code with no marker, snapshots and data (test vectors, fixtures, fonts, tables) that are
    not tests, copied-in code. Test doubles and fakes that live outside test directories (a

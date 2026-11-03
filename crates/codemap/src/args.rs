@@ -124,7 +124,7 @@ pub struct XtabArgs {
     #[arg(long, default_value = MEASURE_DEFAULT)]
     #[serde(default = "measure_default")]
     pub measure: String,
-    /// Path components kept when a dimension is `path`.
+    /// Path components kept below `--path` when a dimension is `path`.
     #[arg(long)]
     pub path_depth: Option<u32>,
     #[command(flatten)]

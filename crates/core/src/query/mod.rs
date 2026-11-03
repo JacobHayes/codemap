@@ -67,7 +67,8 @@ pub enum Query {
         measure: Option<MeasureRef>,
         #[serde(default)]
         filter: Filter,
-        /// Path components kept on a path axis. [`PATH_DEPTH_DEFAULT`] when absent.
+        /// Path components a path axis keeps below the filter's path. [`PATH_DEPTH_DEFAULT`]
+        /// when absent.
         #[serde(default)]
         path_depth: Option<u32>,
     },

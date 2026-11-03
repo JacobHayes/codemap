@@ -334,7 +334,7 @@ hidden: number, };
 
 export type Xtab = { rowAxis: Axis, colAxis: Axis, 
 /**
- * The depth path axes were cut at.
+ * The depth path axes were cut at, below the filter's path.
  */
 pathDepth: number, measure: SizeInfo, total: number, 
 /**

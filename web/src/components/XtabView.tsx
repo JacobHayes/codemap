@@ -21,9 +21,6 @@ type XtabProps = {
   onHidden: (hidden: Hidden | null) => void;
 };
 
-/** The path components a path axis keeps: one below the drilled folder. */
-const pathDepthOf = (path: string) => (path === '' ? 1 : path.split('/').length + 1);
-
 const parentOf = (path: string) => path.split('/').slice(0, -1).join('/');
 
 /** What the grid leaves undrawn, in words; empty when it drew everything. */
@@ -89,7 +86,6 @@ export function XtabView({ state, navigate, catalog, onHidden }: XtabProps) {
       cols: state.cols,
       measure: state.size,
       filter: filterOf(state),
-      pathDepth: pathDepthOf(state.path),
     },
     'xtab',
   );

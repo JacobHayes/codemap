@@ -524,6 +524,28 @@ fn a_cross_tab_honours_filters_and_cuts_paths_at_a_depth() {
     };
     assert!(deep.rows.iter().any(|r| r.name == "src/a/b"));
     assert!(deep.rows.iter().any(|r| r.name == "notes.md"));
+    // Under a path, the depth counts from it: the default keeps the folder's children.
+    let under = Query::Xtab {
+        rows: Axis::Path,
+        cols: Axis::Role,
+        measure: None,
+        filter: Filter {
+            path: Some("src/a".to_owned()),
+            ..Filter::default()
+        },
+        path_depth: None,
+    };
+    let Answer::Xtab(under) = ask(&index, &under) else {
+        panic!()
+    };
+    assert_eq!(
+        under
+            .rows
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>(),
+        ["src/a/b"]
+    );
 }
 
 #[test]
