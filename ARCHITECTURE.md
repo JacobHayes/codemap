@@ -266,8 +266,9 @@ distance from a codebase-wide total, which one large test folder or generated sc
 for everyone. Files too small to say anything about size (fixtures, stubs) are left out of the size and
 concentration peer distributions; they still count toward mass everywhere else. Two project inputs adjust this:
 
-- **Rules** set a threshold on one measure at one granularity ("handling lines per function at
-  least 100"). Rules are one generic detector driven by configuration.
+- **Rules** set a bound on one measure at one granularity ("at most 100 handling lines per
+  function"), and flag every place outside it. Rules are one generic detector driven by
+  configuration.
 - **Acknowledgements** mark areas whose complexity is essential, with a reason, by `path` (a
   location, and the groups whose every member lies under it) or by `group` (a group id, with
   the `members` it listed), and optionally per detector. Acknowledged areas stay visible, ranked after the rest, and counted.
@@ -380,7 +381,7 @@ crates/
   core/          index, extractors, analyses, detectors, query, inference (DuckDB, tree-sitter)
   codemap/       the binary: CLI, MCP, HTTP server, watcher, embedded UI (axum, rust-embed)
 web/             the UI (React, Vite, d3-hierarchy; three.js loaded lazily for the city)
-design/          tokens, base styles, fonts
+design/          tokens, base styles, fonts, the README's screenshots
 skills/codemap/  the agent skill
 ```
 
